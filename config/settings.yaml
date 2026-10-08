@@ -1,0 +1,22 @@
+# 驾驶舱与排序参数。改完重启服务生效。
+
+dashboard:
+  due_soon_days: 3 # 「3 日内到期」桶的窗口
+  stale_days: 7 # 距最近事件超过这么多天算停滞
+  lookahead_days: 7 # 汇报里「未来 N 天的 DDL」
+
+scoring:
+  horizon_days: 14 # urgency 的归一化窗口
+  weights: # 合计 1.00
+    urgency: 0.40
+    criticality: 0.20
+    blocker_age: 0.20
+    downstream: 0.15
+    stale: 0.05
+
+report:
+  default_days: 7 # 没有历史汇报时的默认区间长度
+
+item:
+  default_criticality: 3
+  code_prefix: REQ

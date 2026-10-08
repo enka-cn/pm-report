@@ -1,0 +1,39 @@
+key: se_default
+name: SE 默认流水线
+role: se
+stages:
+  - key: arch_design
+    name: 架构设计
+    kind: work
+    todos:
+      - 输出架构设计文档
+      - 识别外部依赖与接口
+  - key: seg_review
+    name: SEG 评审
+    kind: review
+    todos:
+      - 提交评审材料
+      - SEG 评审通过
+      - 评审意见闭环
+  - key: tmg_review
+    name: TMG 评审
+    kind: review
+    todos:
+      - 提交评审材料
+      - TMG 评审通过
+  - key: req_walkthrough
+    name: 需求串讲
+    kind: review
+    todos:
+      - 串讲材料准备
+      - 向开发完成串讲
+      - 疑问澄清闭环
+  - key: dev_tracking
+    name: 开发进度跟踪
+    kind: work
+    todos: []
+  - key: close
+    name: 收尾关闭
+    kind: milestone
+    todos:
+      - 交付物归档

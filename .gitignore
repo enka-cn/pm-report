@@ -1,0 +1,9 @@
+# 运行时数据不进版本库：备份 = 复制 data/ 目录
+data/
+# 临时实例的数据目录（见 README「隐私」一节）
+.scratch-data/
+.shots/
+node_modules/
+dist/
+*.log
+.DS_Store

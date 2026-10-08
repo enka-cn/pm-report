@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  font-size: 14px;
+}
+
+/* 滚动条细一点，长时间盯着列表舒服些 */
+* {
+  scrollbar-width: thin;
+}
