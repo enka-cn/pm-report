@@ -6,6 +6,7 @@ import type {
   DashboardPayload,
   DeliverableCategory,
   DeliverableWithVersions,
+  DropFileResult,
   EventRow,
   HandoffResult,
   ItemDetail,
@@ -198,10 +199,30 @@ export const api = {
       { method: 'POST', body: form },
     ),
 
+  /**
+   * 拖进来就加入：一次多个文件，服务端从文件名推名字和类别、
+   * 同名归到同一条（认作新版本）、内容没变就跳过。
+   */
+  dropDeliverables: (itemId: number, stageId: number | null, files: File[]) => {
+    const fd = new FormData();
+    if (stageId !== null) fd.set('stageId', String(stageId));
+    for (const f of files) fd.append('file', f);
+    return request<{ results: DropFileResult[] }>(`/api/items/${itemId}/deliverables/drop`, {
+      method: 'POST',
+      body: fd,
+    });
+  },
+
   setDeliverableRequired: (deliverableId: number, required: boolean) =>
     request<{ ok: true }>(`/api/deliverables/${deliverableId}`, {
       method: 'PATCH',
       body: JSON.stringify({ required }),
+    }),
+
+  setDeliverableCategory: (deliverableId: number, category: DeliverableCategory) =>
+    request<{ ok: true }>(`/api/deliverables/${deliverableId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ category }),
     }),
 
   paletteQuery: (q: string, currentItemId?: number | null) =>

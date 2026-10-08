@@ -3,6 +3,7 @@ import type {
   DeliverableRow,
   DeliverableVersionRow,
   DeliverableWithVersions,
+  DropFileResult,
 } from '@manager/shared';
 import { all, lastId, nowIso, one, run, transaction, type Db } from '../db/index.ts';
 import { recordEvent } from './events.ts';
@@ -27,7 +28,19 @@ export interface AddDeliverableInput {
   file: NewFileInput;
 }
 
+/**
+ * sha256 是内容的唯一标识，也是下载接口唯一认的键（`/api/files/:sha256` 会对它做格式校验）。
+ * 库里放一个格式不对的值，就等于放了一条永远下载不了的记录 —— 所以在唯一的写入口挡住。
+ */
+function assertSha256(value: string): void {
+  if (!/^[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`不是合法的 sha256（应为 64 位小写十六进制）: ${value}`);
+  }
+}
+
 function insertVersion(db: Db, deliverableId: number, file: NewFileInput, when: string): DeliverableVersionRow {
+  assertSha256(file.sha256);
+
   const next = Number(
     one<{ n: number }>(
       db,
@@ -197,4 +210,167 @@ export function findVersionBySha(db: Db, sha256: string): DeliverableVersionRow 
     'SELECT * FROM deliverable_version WHERE sha256 = ? ORDER BY id LIMIT 1',
     sha256,
   );
+}
+
+/** 改类别。猜错了得能改回来，否则「拖进来自动分类」就是个陷阱。 */
+export function setDeliverableCategory(
+  db: Db,
+  deliverableId: number,
+  category: DeliverableCategory,
+): void {
+  transaction(db, () => {
+    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+    run(
+      db,
+      'UPDATE deliverable SET category = ?, updated_at = ? WHERE id = ?',
+      category,
+      nowIso(),
+      deliverableId,
+    );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 拖进来就加入
+// ---------------------------------------------------------------------------
+
+/**
+ * 从扩展名猜类别。
+ *
+ * 两条刻意的克制：
+ *   1. **只看扩展名，不看文件名里的关键词。** 按关键词猜（比如名字含「评审」就归到评审记录）
+ *      会变成"有时候猜得莫名其妙"，而这种不确定性比归错一类更烦人。
+ *   2. 猜错的代价必须低 —— 所以界面上能改（见 setDeliverableCategory）。
+ */
+const CATEGORY_BY_EXT: Record<string, DeliverableCategory> = {
+  // 截图
+  png: 'screenshot', jpg: 'screenshot', jpeg: 'screenshot', gif: 'screenshot',
+  webp: 'screenshot', bmp: 'screenshot', svg: 'screenshot',
+  // 设计
+  drawio: 'design', dio: 'design', puml: 'design', plantuml: 'design',
+  mmd: 'design', vsdx: 'design', excalidraw: 'design',
+  // 日志
+  log: 'log', out: 'log', err: 'log',
+  // 文档（含表格与幻灯片 —— 「文档」是这一档里最宽的桶）
+  md: 'doc', txt: 'doc', doc: 'doc', docx: 'doc', pdf: 'doc', rtf: 'doc', odt: 'doc',
+  xls: 'doc', xlsx: 'doc', csv: 'doc', ppt: 'doc', pptx: 'doc',
+};
+
+export function isDeliverableCategory(value: unknown): value is DeliverableCategory {
+  return (
+    typeof value === 'string' &&
+    ['doc', 'design', 'screenshot', 'log', 'review_record', 'other'].includes(value)
+  );
+}
+
+/** 取扩展名（小写，不含点）。没有扩展名返回空串。 */
+function extensionOf(filename: string): string {
+  const base = filename.replace(/^.*[\\/]/, '');
+  const dot = base.lastIndexOf('.');
+  return dot > 0 ? base.slice(dot + 1).toLowerCase() : '';
+}
+
+export function guessCategory(filename: string): DeliverableCategory {
+  return CATEGORY_BY_EXT[extensionOf(filename)] ?? 'other';
+}
+
+/**
+ * 文件名 → 交付物名。
+ *
+ * 去掉扩展名：交付物是「送测申请单」，`送测申请单.docx` 只是它的第 1 版。
+ * 原始文件名没有丢 —— 它在版本的 `original_filename` 里，下载时还原。
+ * 前导点不剥（`.gitignore` 是一个整体，不是名字 + 扩展名）。
+ */
+export function deliverableNameFrom(filename: string): string {
+  const base = filename.replace(/^.*[\\/]/, '').trim();
+  const dot = base.lastIndexOf('.');
+  const name = dot > 0 ? base.slice(0, dot) : base;
+  return name.trim() || base;
+}
+
+export type DropAction = DropFileResult['action'];
+
+export interface DropInput {
+  itemId: number;
+  /** 落到哪个阶段。不传就是「不属于任何阶段」 */
+  stageId?: number | null;
+  /** 已经落盘的文件元数据（storeFile 的结果） */
+  files: NewFileInput[];
+}
+
+/**
+ * 一批文件直接变成交付物。
+ *
+ * 三条规则：
+ *   1. **同名归到同一条。** 同一条需求下已经有同名交付物时，这次上传是**它的新版本**，
+ *      而不是又建一条。否则拖两次同一个文件就会得到两条长得一样的交付物。
+ *      这也让「必交项」真正好用：你建一条叫「SEG 评审记录」并勾上必交，
+ *      之后把文件拖进这个阶段，它自动补上那一版，卡点就解了。
+ *   2. **内容没变就不造版本。** 同一个文件拖两次，第二次是空操作，不是 v2。
+ *   3. **一个文件失败不拖累整批。** 拖 5 个进来不该因为第 3 个失败就全丢，
+ *      所以每个文件独立成事务，失败的那个把原因记在结果里。
+ */
+export function dropDeliverables(db: Db, input: DropInput): DropFileResult[] {
+  const item = one<{ id: number }>(db, 'SELECT id FROM item WHERE id = ?', input.itemId);
+  if (!item) throw new Error(`需求不存在: ${input.itemId}`);
+
+  return input.files.map((file) => {
+    const name = deliverableNameFrom(file.filename);
+    try {
+      const existing = one<DeliverableRow>(
+        db,
+        `SELECT * FROM deliverable
+          WHERE item_id = ? AND lower(trim(name)) = lower(trim(?))
+          ORDER BY id LIMIT 1`,
+        input.itemId,
+        name,
+      );
+
+      if (!existing) {
+        const created = addDeliverable(db, {
+          itemId: input.itemId,
+          stageId: input.stageId ?? null,
+          name,
+          category: guessCategory(file.filename),
+          required: false,
+          file,
+        });
+        return { filename: file.filename, deliverableName: name, action: 'created', deliverable: created };
+      }
+
+      const current =
+        existing.current_version_id === null
+          ? undefined
+          : one<DeliverableVersionRow>(
+              db,
+              'SELECT * FROM deliverable_version WHERE id = ?',
+              existing.current_version_id,
+            );
+
+      if (current && current.sha256 === file.sha256) {
+        return {
+          filename: file.filename,
+          deliverableName: existing.name,
+          action: 'unchanged',
+          deliverable: getDeliverable(db, existing.id)!,
+        };
+      }
+
+      const updated = addDeliverableVersion(db, existing.id, file);
+      return {
+        filename: file.filename,
+        deliverableName: existing.name,
+        action: 'versioned',
+        deliverable: updated,
+      };
+    } catch (err) {
+      return {
+        filename: file.filename,
+        deliverableName: name,
+        action: 'failed',
+        error: (err as Error).message,
+      };
+    }
+  });
 }

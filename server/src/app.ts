@@ -39,8 +39,11 @@ import { computeDashboardPayload } from './domain/dashboard.ts';
 import {
   addDeliverable,
   addDeliverableVersion,
+  dropDeliverables,
   findVersionBySha,
+  isDeliverableCategory,
   listDeliverables,
+  setDeliverableCategory,
   setDeliverableRequired,
 } from './domain/deliverables.ts';
 import { absolutePathOf, relPathOf, storeFile } from './domain/storage.ts';
@@ -266,6 +269,24 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     };
   }
 
+  /** 拖拽上传一次可以带多个文件，字段名 `file`（重复即可） */
+  async function readUploadedFiles(
+    form: FormData,
+  ): Promise<{ bytes: Buffer; filename: string; mime: string | null }[]> {
+    const entries = [...form.getAll('file'), ...form.getAll('files')];
+    const files = entries.filter((e): e is File => e instanceof File);
+    if (files.length === 0) {
+      throw new Error('缺少上传文件：multipart 字段名应为 file（可重复）');
+    }
+    return Promise.all(
+      files.map(async (f) => ({
+        bytes: Buffer.from(await f.arrayBuffer()),
+        filename: f.name || 'unnamed',
+        mime: f.type || null,
+      })),
+    );
+  }
+
   app.get('/api/items/:id/deliverables', (c) => {
     const id = asNumber(c.req.param('id'), 'id')!;
     return c.json({ deliverables: listDeliverables(db, id) });
@@ -295,6 +316,32 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     return c.json({ ...created, deduplicated: stored.reused }, 201);
   });
 
+  /**
+   * 拖进来就加入。
+   *
+   * 与 `/api/deliverables` 的区别：不用先想名字和类别 —— 从文件名推、
+   * 同名归到同一条（认作新版本）、内容没变就跳过。详见 dropDeliverables 的注释。
+   */
+  app.post('/api/items/:id/deliverables/drop', async (c) => {
+    const itemId = asNumber(c.req.param('id'), 'id')!;
+    const form = await c.req.formData();
+    const stageId = asNumber(form.get('stageId'), 'stageId', false) ?? null;
+
+    const uploads = await readUploadedFiles(form);
+    const files = uploads.map((upload) => {
+      const stored = storeFile(upload.bytes, filesDir);
+      return {
+        sha256: stored.sha256,
+        relPath: stored.relPath,
+        filename: upload.filename,
+        sizeBytes: stored.sizeBytes,
+        mime: upload.mime,
+      };
+    });
+
+    return c.json({ results: dropDeliverables(db, { itemId, stageId, files }) }, 201);
+  });
+
   app.post('/api/deliverables/:id/versions', async (c) => {
     const id = asNumber(c.req.param('id'), 'id')!;
     const form = await c.req.formData();
@@ -316,7 +363,18 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   app.patch('/api/deliverables/:id', async (c) => {
     const id = asNumber(c.req.param('id'), 'id')!;
     const body = await readJson(c);
-    setDeliverableRequired(db, id, asBool(body['required']));
+
+    // 只在字段真的传了的时候才改。原来无条件 setDeliverableRequired(asBool(undefined))
+    // 意味着「只改类别」会把必交项顺手取消掉。
+    if (body['required'] !== undefined) {
+      setDeliverableRequired(db, id, asBool(body['required']));
+    }
+    if (body['category'] !== undefined) {
+      if (!isDeliverableCategory(body['category'])) {
+        throw new Error(`交付物类别不合法: ${String(body['category'])}`);
+      }
+      setDeliverableCategory(db, id, body['category']);
+    }
     return c.json({ ok: true });
   });
 

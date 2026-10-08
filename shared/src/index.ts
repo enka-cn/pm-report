@@ -70,6 +70,20 @@ export type EventType =
 /** 项目类型。这是「这是哪种东西」的分类，不是「它现在什么状态」——不违反 D2。 */
 export type ProjectKind = 'delivery' | 'caretaking';
 
+/** 拖进来的一个文件最后怎么处理的 */
+export type DropAction = 'created' | 'versioned' | 'unchanged' | 'failed';
+
+export interface DropFileResult {
+  /** 拖进来的原始文件名 */
+  filename: string;
+  /** 归到了哪个交付物名下 */
+  deliverableName: string;
+  action: DropAction;
+  /** action === 'failed' 时才有 */
+  error?: string;
+  deliverable?: DeliverableWithVersions;
+}
+
 export interface ProjectRow {
   id: number;
   code: string;

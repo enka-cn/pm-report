@@ -26,6 +26,19 @@
 2. **已应用的迁移文件不可修改。**
    迁移运行器会校验 checksum 并在不匹配时报错。改 schema 请新增 `00N_xxx.sql`。
 
+## 前端有个 tsc 查不出的坑
+
+**不要把 hook 放在 `if (...) return` 后面。**
+
+组件里常见「加载中 → 提前 return，加载完 → 往下走」的写法。如果 hook 写在那句 return 之后，
+首次渲染（加载中）不调用它、第二次渲染调用它，React 就抛 `#310`（渲染的 hook 比上次多），
+**整个页面白屏**，而 `pnpm typecheck` 和所有单元测试都不会报错。
+
+这个坑真踩过（`ItemDetail` 的 `useFileDrop`）。所以加了 `useRef` 存回调要用的数据，
+hook 一律提到所有提前 return 之上。
+
+改完前端建议真加载一遍所有路由看看有没有白屏 —— 光跑 typecheck 不够。
+
 ## 开发模式
 
 ```powershell
@@ -90,8 +103,9 @@ pnpm start
 | POST | `/api/blockers` · PATCH `/api/blockers/:id` | 建阻塞 / 解除 |
 | GET | `/api/items/:id/deliverables` | 交付物与版本列表 |
 | POST | `/api/deliverables` (multipart) | 新建交付物并上传首个版本 |
+| POST | `/api/items/:id/deliverables/drop` (multipart) | **拖进来就加入**：多文件、自动命名与分类、同名认版本 |
 | POST | `/api/deliverables/:id/versions` (multipart) | 给已有交付物加版本 |
-| PATCH | `/api/deliverables/:id` | 设为 / 取消必交项 |
+| PATCH | `/api/deliverables/:id` | 改类别 / 设为取消必交项（只改传了的字段） |
 | GET | `/api/files/:sha256` | 按内容哈希下载 |
 | GET | `/api/palette/query?q=&currentItemId=` | 命令面板候选 + 补全上下文 + **人话预览** |
 | POST | `/api/palette/execute` | 执行命令（`{input, currentItemId}`） |

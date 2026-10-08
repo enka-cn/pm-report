@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   DeliverableCategory,
@@ -11,6 +11,7 @@ import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { fmtDay, fmtTime, toDateInput } from '../lib/format';
+import { summarizeDrop, useFileDrop } from '../lib/drop';
 import { ConditionBadge, RoleBadge, StageKindLabel } from './Badges';
 import { Field, Hint, Panel, PromptRow, btnDanger, btnGhost, btnPrimary, inputCls } from './ui';
 
@@ -31,18 +32,64 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
     }
   }
 
+  const detail = q.data;
+
+  // 拖放。**必须在上面那几个提前 return 之前调用** —— hook 的数量每次渲染必须一致，
+  // 放在 `if (!detail) return` 后面就会变成「加载中那次不调用、加载完调用」，
+  // React 直接抛 #310 白屏，而 tsc 查不出来。
+  // 回调要用的数据放 ref：它在 drop 那一刻才跑，拿不到当次渲染的闭包。
+  const dropCtx = useRef({ stages: [] as StageRow[], defaultStageId: null as number | null });
+  if (detail) {
+    dropCtx.current = {
+      stages: detail.stages,
+      defaultStageId: stageId ?? detail.item.active_stage_id,
+    };
+  }
+
+  const drop = useFileDrop((files, targetId) => {
+    const { stages, defaultStageId } = dropCtx.current;
+    const stageIdToUse = targetId ?? defaultStageId;
+    const stageName = stages.find((s) => s.id === stageIdToUse)?.name ?? '不属于任何阶段';
+
+    void (async () => {
+      try {
+        const { results } = await api.dropDeliverables(id, stageIdToUse, files);
+        const { ok, failed } = summarizeDrop(results);
+        if (failed.length > 0) notice.fail(`加入「${stageName}」：${ok}\n${failed.join('\n')}`);
+        else notice.ok(`加入「${stageName}」：${ok}`);
+        await queryClient.invalidateQueries();
+      } catch (err) {
+        notice.fail(messageOf(err));
+      }
+    })();
+  });
+
   if (q.isLoading) return <Hint>加载中…</Hint>;
   if (q.error) return <Hint tone="error">{messageOf(q.error)}</Hint>;
-
-  const detail = q.data;
   if (!detail) return <Hint>需求不存在。</Hint>;
 
   const { item } = detail;
   const selected =
     detail.stages.find((s) => s.id === (stageId ?? item.active_stage_id)) ?? detail.stages[0];
 
+  const bannerStage =
+    detail.stages.find((s) => s.id === (drop.targetId ?? selected?.id))?.name ??
+    '不属于任何阶段';
+
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-5">
+    <div className="relative mx-auto max-w-[1400px] px-6 py-5" {...drop.handlers}>
+      {drop.active && (
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center pt-4">
+          <div className="rounded-full border border-sky-500/60 bg-zinc-900/95 px-4 py-2 text-sm text-sky-200 shadow-xl">
+            松手即加入「{bannerStage}」
+            {drop.count > 1 && ` · ${drop.count} 个文件`}
+            <span className="ml-2 text-xs text-zinc-500">
+              悬到某个阶段上可以指定阶段
+            </span>
+          </div>
+        </div>
+      )}
+
       <header className="mb-4 flex flex-wrap items-center gap-3">
         <button
           onClick={() => navigate({ name: 'dashboard' })}
@@ -119,13 +166,22 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
       <div className="grid grid-cols-[260px_minmax(0,1fr)_320px] gap-4">
         <div>
           <Panel title="流水线">
-            <StagePipeline detail={detail} selectedId={selected?.id ?? null} />
+            <StagePipeline
+              detail={detail}
+              selectedId={selected?.id ?? null}
+              dropTarget={drop.active ? drop.targetId : null}
+            />
           </Panel>
         </div>
 
         <div className="space-y-4">
           {selected ? (
-            <StagePanel detail={detail} stage={selected} act={act} />
+            <StagePanel
+              detail={detail}
+              stage={selected}
+              act={act}
+              dropTarget={drop.active ? drop.targetId : null}
+            />
           ) : (
             <Hint>这个需求没有阶段。</Hint>
           )}
@@ -182,7 +238,15 @@ function SuspendControls({ detail, act }: { detail: ItemData; act: Act }) {
   );
 }
 
-function StagePipeline({ detail, selectedId }: { detail: ItemData; selectedId: number | null }) {
+function StagePipeline({
+  detail,
+  selectedId,
+  dropTarget,
+}: {
+  detail: ItemData;
+  selectedId: number | null;
+  dropTarget: number | null;
+}) {
   return (
     <div className="space-y-1">
       {detail.stages.map((s) => {
@@ -194,9 +258,14 @@ function StagePipeline({ detail, selectedId }: { detail: ItemData; selectedId: n
         return (
           <button
             key={s.id}
+            data-drop-stage={s.id}
             onClick={() => navigate({ name: 'item', id: detail.item.id, stageId: s.id })}
             className={`w-full rounded border px-2 py-1.5 text-left ${
-              chosen ? 'border-zinc-500 bg-zinc-800' : 'border-zinc-800 hover:border-zinc-600'
+              dropTarget === s.id
+                ? 'border-sky-400 ring-1 ring-sky-400/50'
+                : chosen
+                  ? 'border-zinc-500 bg-zinc-800'
+                  : 'border-zinc-800 hover:border-zinc-600'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -235,7 +304,17 @@ function StagePipeline({ detail, selectedId }: { detail: ItemData; selectedId: n
 
 // ---------------------------------------------------------------------------
 
-function StagePanel({ detail, stage, act }: { detail: ItemData; stage: StageRow; act: Act }) {
+function StagePanel({
+  detail,
+  stage,
+  act,
+  dropTarget,
+}: {
+  detail: ItemData;
+  stage: StageRow;
+  act: Act;
+  dropTarget: number | null;
+}) {
   const stageTodos = detail.todos.filter((t) => t.stage_id === stage.id);
   const stageDeliverables = detail.deliverables.filter((d) => d.stage_id === stage.id);
   const missingRequired = stageDeliverables.filter(
@@ -255,7 +334,15 @@ function StagePanel({ detail, stage, act }: { detail: ItemData; stage: StageRow;
 
   return (
     <>
-      <Panel
+      <div
+        data-drop-stage={stage.id}
+        className={
+          dropTarget === stage.id
+            ? 'rounded-lg ring-2 ring-sky-400/70 ring-offset-4 ring-offset-zinc-950'
+            : undefined
+        }
+      >
+        <Panel
         title={`阶段：${stage.name}`}
         extra={
           <label className="flex items-center gap-1 text-xs text-zinc-500">
@@ -318,6 +405,7 @@ function StagePanel({ detail, stage, act }: { detail: ItemData; stage: StageRow;
           </div>
         )}
       </Panel>
+      </div>
     </>
   );
 }
@@ -472,6 +560,12 @@ function DeliverableList({
 
   return (
     <div>
+      {/* 拖进来的入口：不用点、不用填，落到这个阶段上 */}
+      <div className="mb-2 rounded border border-dashed border-zinc-700 px-3 py-2 text-center text-xs text-zinc-500">
+        把文件拖到页面上即加入这个阶段
+        <span className="text-zinc-600">（悬到流水线里的某个阶段上可指定阶段）</span>
+      </div>
+
       {items.length === 0 && <div className="text-xs text-zinc-500">这个阶段还没有交付物。</div>}
 
       <ul className="space-y-2">
@@ -482,9 +576,30 @@ function DeliverableList({
             <li key={d.id} className="rounded border border-zinc-800 px-2 py-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-zinc-200">{d.name}</span>
-                <span className="text-xs text-zinc-500">
-                  {meta.data?.categories[d.category] ?? d.category}
-                </span>
+                {/* 拖进来时按扩展名猜的类别，猜错了在这儿改回来 */}
+                <select
+                  value={d.category}
+                  title="类别（拖进来的文件按扩展名自动归类）"
+                  onChange={(e) =>
+                    void act(
+                      () =>
+                        api
+                          .setDeliverableCategory(d.id, e.target.value as DeliverableCategory)
+                          .then(() => undefined),
+                      () =>
+                        `${d.name} 的类别已改为${
+                          meta.data?.categories[e.target.value as DeliverableCategory] ?? ''
+                        }`,
+                    )
+                  }
+                  className="rounded border border-zinc-800 bg-zinc-900 px-1 py-0.5 text-xs text-zinc-400"
+                >
+                  {Object.entries(meta.data?.categories ?? {}).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
                 {d.required === 1 && (
                   <span className={missing ? 'text-xs text-amber-300' : 'text-xs text-zinc-500'}>
                     必交{missing ? '（未上传）' : ''}
