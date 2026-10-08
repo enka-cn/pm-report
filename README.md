@@ -1,48 +1,248 @@
 # 本地项目管理系统
 
-管理需求及其各阶段 DDL、零散交付物（文档 / 截图 / 日志），并从事件日志自动生成汇报草稿。
+管你手上每个需求走到哪一步、下一个 DDL 是什么、零散的交付物放在哪，
+并在每次汇报前自动汇总出**「这两次汇报之间我做了什么」**。
 
-**改代码前先读 [docs/design.md](docs/design.md) 的「核心设计决策」一节** —— 那几条决定了整个数据模型，绕开它们的改动会让汇报功能失效。
+数据全在本机的一个 SQLite 文件里：没有账号、没有服务器、不联网。
 
-## 运行
+---
 
-需要 Node 24+（用到内置的 `node:sqlite` 与 TypeScript 类型剥离，服务端无需构建步骤）和 pnpm。
+## 快速开始
 
-### 开发模式（前后端分开，带热更新）
+需要 **Node 24+** 和 **pnpm**。
 
 ```powershell
 pnpm install
-pnpm dev          # 同时起后端 :5178 和前端 :5173
+pnpm build
+pnpm start
 ```
 
-打开 **http://127.0.0.1:5173** —— Vite 会把 `/api` 代理到后端，不用管 CORS。
+打开 **http://127.0.0.1:5178**。也可以用 `.\start.ps1`（等价于先跑数据库迁移再起服务）。
 
-### 单地址模式（构建前端产物，一个地址搞定）
+日常更新：
 
 ```powershell
-pnpm build        # 构建前端到 web/dist
-pnpm start        # 后端会一并托管前端产物
+git pull
+pnpm install     # 依赖没变时可以跳过
+pnpm build       # 只有改过前端才需要
+pnpm start
 ```
 
-打开 **http://127.0.0.1:5178**。这也是日常使用的推荐方式：只有一个进程、一个地址。
+数据库表结构会在启动时自动升级，**你已有的数据不会丢**。
 
-- 数据库：`data/manager.db`；上传的文件在 `data/files/`
-- **备份 = 复制 `data/` 目录**
-- 界面里按 **Ctrl+K** 唤起命令面板
+---
 
-其它命令：
+## 它是怎么想这件事的
 
-```powershell
-pnpm migrate      # 只跑迁移
-pnpm test         # 测试（领域层 + HTTP 层）
-pnpm typecheck    # shared / server / web 三处类型检查
-```
+四条规则决定了界面的样子。理解了这四条，剩下的都是一眼看懂。
 
-也可以用 `.\start.ps1`，等价于先迁移再起服务。
+### ① 需求沿「流水线」往前走，不在状态之间跳
 
-### 在内网机器上部署
+每个需求从模板实例化出一条阶段流水线，**同一时刻只有一个当前阶段**：
 
-开发在能上外网的环境做，日常在内网用。内网只进不出，所以更新流程是**外面 push、里面 pull**：
+| 角色 | 流水线 |
+|---|---|
+| SE | 架构设计 → SEG 评审 → TMG 评审 → 需求串讲 → 开发进度跟踪 → 收尾关闭 |
+| 开发 | 需求反串讲 → 开发 → DT → 送测 → 等待测试报告 → DTS 解单 → 合入 |
+
+推进阶段是唯一的前进方式。模板在 `config/pipelines/*.yaml`，可以自己改。
+
+### ② 状态是算出来的，不需要你设
+
+你找不到「把状态改成阻塞」这个操作 —— 因为没有这个字段。状态是从事实推出来的：
+
+| 你看到的 | 它其实是 |
+|---|---|
+| **阻塞** | 有一条未解除的阻塞 |
+| **挂起** | `suspended_at` 有值 |
+| **结束** | `closed_at` 有值 |
+| **正常** | 以上都没有 |
+
+所以：**建一条阻塞，需求就变阻塞；解除它，自动恢复。** 没有两处要同步，也就不会互相矛盾。
+
+### ③ 待办挂在阶段上，勾完才能推进
+
+模板会带一批样板待办（界面上标着「模板」）。用不上的单条 `×` 删掉；如果某几条你**每次都删**，
+直接改 `config/pipelines/*.yaml` 里的 `todos`，以后就不会再生成。
+
+待办没勾完也能强推，但会被要求写明原因 —— 这个原因会进事件日志。
+
+### ④ 进度不是手填的，是事件攒出来的
+
+记一条进展、推进一个阶段、上传一个交付物、解除一个阻塞 —— 每一次动作都写一条**事件**。
+
+汇报草稿就是「把某个区间内的事件翻译成人话」。所以它不需要你回忆，也不会和事实不一致。
+
+---
+
+## 每天怎么用
+
+1. **新建需求** —— 选角色（SE / 开发），流水线和第一批待办自动铺好
+2. **设 DDL** —— 整体交付日期，或某一阶段的日期
+3. **干活** —— 勾待办、记进展、上传交付物
+4. **卡住了** —— 建一条阻塞，写清「等谁、等什么」，需求自动进入「我被阻塞」桶
+5. **推进阶段** —— 待办勾完 → 推进 → 进入下一阶段
+6. **汇报** —— 打开「汇报」，生成草稿，改完定稿
+
+最省事的做法是全部用命令面板（下面有速查表），手不离键盘。
+
+---
+
+## 驾驶舱
+
+打开就是仪表盘：统计卡片（点一下跳到对应明细）、三个焦点列表、甘特图，最后是七个桶。
+
+![驾驶舱](docs/screenshots/dashboard.png)
+
+七个桶**互相独立**，一个需求可以同时在多个桶里（比如既逾期又被阻塞）：
+
+| 桶 | 含义 | 窗口 |
+|---|---|---|
+| 逾期 | 下一个 DDL 已经过了 | — |
+| 3 日内到期 | 快到了 | `due_soon_days: 3` |
+| 我被阻塞（等别人） | 我在等别人 —— 这类事你自己使劲也没用 | — |
+| 我阻塞别人（需我推动） | 别人在等我 | — |
+| 停滞 | 很久没有任何事件 | `stale_days: 7` |
+| 无 DDL | 还没设日期 —— **不是为了催你，是防止你真的忘了** | — |
+| 挂起 | 你主动停掉的，不算逾期也不算停滞 | — |
+
+窗口天数在 `config/settings.yaml` 里改，重启生效。
+
+三个焦点列表按紧迫度打分排序（权重也在 `settings.yaml` 里）：
+
+- **最紧要** —— 按到期紧迫度、关键度、被卡时长综合
+- **需要我去推动** —— 别人在等我，这一类只有我能单方面解决
+- **我被卡住** —— 我在等别人，承诺时间已过的排最前
+
+**挂起需求会从所有桶里退出**（除了「挂起」桶），也不进焦点列表 —— 这是「别催我」开关。
+
+---
+
+## 命令面板（Ctrl+K）
+
+界面里按 **Ctrl+K**。输入时会先显示**「将要执行什么」的预览**：
+
+![命令面板](docs/screenshots/command-palette.png)
+
+预览不是猜的 —— 它和执行用的是同一个计划对象。所以**会失败的情况在这里就能看到**，
+不用等按下回车（上图里 `/bump` 因为待办没勾完，预览直接写明「执行会被拒绝」）。
+
+### 语法速查
+
+| 命令 | 干什么 |
+|---|---|
+| `/todo <文本> [#REQ-1] [@阶段] [due:3d]` | 给需求加一条待办 |
+| `/log <文本> [#REQ-1]` | 记一条进展（写进时间线） |
+| `/bump [#REQ-1] [@阶段] [outcome:skipped] [reason:原因] [force:true]` | 推进阶段 |
+| `/ddl [#REQ-1] [@阶段] <2026-03-05\|3d\|today>` | 设需求整体或某阶段的 DDL（不带 `@` 就是整体） |
+| `/suspend [#REQ-1] [@阶段] <原因>` | 挂起（不带 `@` 就是整个需求） |
+| `/resume [#REQ-1] [@阶段]` | 恢复 |
+| `/close [#REQ-1] done\|cancelled` | 关闭需求 |
+| `/block [#REQ-1] to:<对方> need:<等什么> [dir:blocked\|blocking] [sev:high] [promise:3d]` | 记一条阻塞 |
+| `/unblock <阻塞ID> [解除说明]` | 解除阻塞 |
+| `/search <关键词>` | 全文检索 |
+| `/report` | 生成汇报草稿 |
+| `/help` | 列出所有命令 |
+
+三个语法要素：
+
+- `#REQ-1` 指定需求（**不带就用界面当前打开的那条**）
+- `@开发` 指定阶段（**不带就用当前进行中的阶段**）
+- `key:value` 是修饰符，值里有空格就用引号：`to:"隔壁模块 张三"`
+
+### 几个顺手的细节
+
+**`Tab` 补全。** 命令名补到 `/todo `，`#REQ` 补到 `#REQ-`（补到第一个不一样的地方）；
+按方向键选中某条后 `Tab` 补全整条。正在挑候选时**不会报错**——`#REQ` 会列出候选，而不是骂你「请用编号指明」：
+
+![Tab 补全](docs/screenshots/command-palette-tab.png)
+
+**相对日期。** `due:3d` 是三天后，还有 `today`、`7d`，或者直接写 `2026-03-05`。
+
+**`>REQ-1` 是精确跳转**，不猜，找不到就明确报错。
+
+**搜不到时垫一条「在全文里搜」** —— 面板只搜标题，正文里的东西（备注、待办、交付物）走全文检索。
+
+---
+
+## 全文检索
+
+搜的是**正文**，不只是标题：写在备注里的「等测试组排期」、随手加的待办、交付物文件名、
+阻塞里等谁等什么、项目的看护条件 —— 都在一个索引里。命中片段高亮，可以按类别筛选。
+
+![全文检索](docs/screenshots/search.png)
+
+索引是数据库触发器维护的，你写什么它就索引什么，不会过期。
+
+---
+
+## 需求详情
+
+流水线、待办、交付物、阻塞、时间线都在这一个页面上：
+
+![需求详情](docs/screenshots/item-detail.png)
+
+**交付物**是内容寻址的：同一份文件重复上传只存一份，每个交付物可以有多个版本，
+旧版本不会丢。必交项可以设成**阶段卡点** —— 没上传就不让推进阶段（除非强制跳过并写原因）。
+
+---
+
+## 汇报草稿
+
+左边是历史和「生成」按钮，右边是可编辑的 Markdown：
+
+![汇报草稿](docs/screenshots/report.png)
+
+**区间自动衔接。** 生成时的起点 = 上一次**定稿**的结束时间。所以第二次汇报里
+**只有两次之间的新动作**，之前那些不会重复出现。
+
+**定稿之后就锁住了**（不能再改、不能删），要改得先「取消定稿」。定稿的结束时间就是下一次的起点。
+
+措辞和顺序都能改 —— 编辑 `config/report_templates/default.md`。
+语法只有四种：`{{变量}}`、`{{#each}}`、`{{#if}}`、`{{#unless}}`，
+可用变量见[设计文档 §8.2](docs/design.md)。
+
+---
+
+## 看护型项目
+
+有些责任不是「有日程的交付」，而是**长期持有、事件驱动、将来要交出去**的。
+比如接手别人的一个已交付项目，只在有新平台需求时才动一次。
+
+这类建**看护型项目**：它**不进任何时间桶**（它不是一个需求、没有日程），
+只在驾驶舱的「看护中」里安静地列着。触发时在它下面新建一条子需求 ——
+那条子需求是普通需求，有 DDL 就照常提醒。
+
+![看护中](docs/screenshots/dashboard-caretaking.png)
+
+**看护条件**是必填的（「等什么会触发下一次动作」）—— 那是接手的人唯一必须知道的事。
+
+**交接**是项目级动作。它会自动把「在途子需求 + 未解除的阻塞 + 看护条件」记进事件日志，
+接手的人查得到自己接了什么。
+
+而且：**对方确认接手之前，它不会从你的驾驶舱消失**，只是标注「已交出，等 XX 接收」。
+免得责任在交接的缝隙里蒸发 —— 它的触发条件可能一年后才成立，到那时没人记得还有这回事。
+
+![待接收](docs/screenshots/handoff-pending.png)
+
+---
+
+## 数据在哪、怎么备份
+
+| | |
+|---|---|
+| 数据库 | `data/manager.db`（SQLite） |
+| 上传的文件 | `data/files/`（按内容哈希命名） |
+| **备份** | **复制整个 `data/` 目录**，没有别的 |
+
+`data/` 不在版本库里，`git pull` 碰不到它。想在不碰真实数据的前提下试东西，
+可以换个数据目录和端口启动（见 [docs/development.md](docs/development.md)）。
+
+---
+
+## 在内网机器上部署
+
+如果开发在外网、日常在内网用（内网只进不出），更新流程就是**外面 push、里面 pull**：
 
 ```powershell
 git pull
@@ -51,142 +251,19 @@ pnpm build        # 前端产物不进版本库，改过前端就必须重建
 pnpm start
 ```
 
-`data/` 不在版本库里，`git pull` 碰不到它 —— 更新代码不会动你的数据。
+`data/` 不在版本库里，更新代码不会动你的数据。
 
-浏览器打开 **http://127.0.0.1:5178**。
-
-> **注意**：`pnpm install` 和 `pnpm build` 都需要能访问 npm 源。内网如果连 npm 也不通，
+> **注意**：`pnpm install` 和 `pnpm build` 需要能访问 npm 源。内网如果连 npm 也不通，
 > 这一步会失败 —— 那种情况需要先把依赖备好（把 `node_modules/` 一起带过去，
 > 或者在内网架一个 npm 镜像）。
 
-## 界面
+---
 
-**驾驶舱**是仪表盘：统计卡片（点一下就跳到对应桶的明细）、三个焦点列表（最紧要 / 需要我去推动 / 我被卡住）、甘特图（横条从创建日到下一个 DDL，逾期段加深，阶段 DDL 是菱形），最后才是七桶明细。
+## 想改这个系统
 
-| 驾驶舱 | 需求详情：流水线 / 待办 / 交付物 / 阻塞 / 时间线 |
-|---|---|
-| ![驾驶舱](docs/screenshots/dashboard.png) | ![需求详情](docs/screenshots/item-detail.png) |
+见 [docs/development.md](docs/development.md)（目录结构、接口、开发模式、约定）
+和 [docs/design.md](docs/design.md)（**改代码前必读**：实体模型、决策与理由）。
 
-命令面板（`Ctrl+K`）：输入命令后会先给出「将要执行」的预览。**会失败的情况在这里就能看到**，
-不用等按下回车 —— 下面这张图里 `/bump` 因为还有待办没勾完，预览直接写明「执行会被拒绝」：
+`config/` 下的流水线、窗口参数、汇报模板都是给人手改的，不用碰代码。
 
-![命令面板](docs/screenshots/command-palette.png)
-
-**看护型项目**：长期持有、事件驱动、要交接出去的责任（比如接手别人的一个已交付项目，只在有新需求时才动）。
-它**不进任何时间桶**——它不是一个需求、没有日程；只有触发时在它下面新建的子需求才照常提醒。
-交接在对方**确认接手之前**不会从你的驾驶舱消失（免得责任在交接的缝隙里蒸发）：
-
-| 项目详情：看护条件 / 说明 / 子需求 / 交接 | 驾驶舱的「看护中」 |
-|---|---|
-| ![项目详情](docs/screenshots/project-detail.png) | ![看护中](docs/screenshots/dashboard-caretaking.png) |
-
-**全文检索**：搜的是**正文**，不只是标题——你写在备注里的「等测试组排期」、随手加的待办、
-交付物文件名、阻塞里等谁等什么、项目的看护条件，都在一个索引里。命中片段高亮，按类别筛选：
-
-![全文检索](docs/screenshots/search.png)
-
-命令面板搜不到时会垫一条「在全文里搜「xxx」」（也可以用 `/search <关键词>`）。
-索引由 13 个触发器维护，不会过期；`POST /api/search/reindex` 是索引漂了时的对账手段。
-
-**命令面板（Ctrl+K）**：`Tab` 补全。命令名补到 `/todo `，`#REQ` 补到 `#REQ-`（补到第一个不一样的字符），
-方向键选中某条后 `Tab` 补全整条。查询期间不报错——`#REQ` 会列出候选而不是骂你「请用编号指明」：
-
-![命令面板](docs/screenshots/command-palette.png)
-
-**汇报草稿**：左侧生成与历史，右侧是可编辑的 Markdown。区间自动从「上一次定稿的结束时间」接到现在，
-所以「两次汇报之间发生了什么」是一次查询的结果，不靠回忆：
-
-![汇报草稿](docs/screenshots/report.png)
-
-措辞和顺序都能改：编辑 [config/report_templates/default.md](config/report_templates/default.md) 即可，
-语法只有 `{{变量}}` / `{{#each}}` / `{{#if}}` / `{{#unless}}` 四种，见[设计文档 §8.2](docs/design.md)。
-
-待办行末尾的 `×` 可以单条删除（带「模板」标记的说明它来自流水线模板）；如果某几条每次都要删，
-直接改 `config/pipelines/*.yaml` 里的 `todos` 就不会再生成。
-
-## 目录
-
-| 路径 | 说明 |
-|---|---|
-| [docs/design.md](docs/design.md) | 设计文档：实体模型、决策与理由、驾驶舱分桶、汇报算法 |
-| [config/pipelines/](config/pipelines/) | 流水线模板（SE / 开发两套），改完重启生效 |
-| [config/settings.yaml](config/settings.yaml) | 驾驶舱窗口与排序权重 |
-| [config/report_templates/](config/report_templates/) | 汇报模板（P2 用） |
-| [server/src/db/migrations/](server/src/db/migrations/) | schema 的唯一真相源 |
-| [server/src/domain/](server/src/domain/) | 领域逻辑，**事件写入的唯一入口** |
-| [web/src/](web/src/) | 前端：驾驶舱、需求列表/详情、搜索、项目、汇报、命令面板 |
-| [shared/src/index.ts](shared/src/index.ts) | 前后端共享类型（只导出类型，无运行时代码） |
-
-## 两条硬约定
-
-1. **所有状态变更必须经过 `server/src/domain/`。** 事件表由数据库触发器强制 append-only：改和删会被拒绝，只有写入 `voided_at` 的作废可行。一旦有代码旁路写库，事件日志就不再是完整真相，汇报会开始骗人 —— 这个系统一旦撒谎就没有价值。
-2. **已应用的迁移文件不可修改。** 迁移运行器会校验 checksum 并在不匹配时报错；改 schema 请新增 `00N_xxx.sql`。
-
-## 已实现的接口
-
-服务起来后可以直接拿 `curl` / `Invoke-RestMethod` 试。
-
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/api/health` | 存活与已加载的流水线模板 |
-| GET | `/api/meta` | 中文标签映射 + 命令面板帮助文本（前端取这里，不重复定义） |
-| GET | `/api/pipelines` | 流水线模板全文 |
-| GET | `/api/dashboard` | 驾驶舱分桶 + 摘要计数 |
-| GET | `/api/items?q=&role=&condition=&includeClosed=` | 需求列表（`condition` 来自 `v_item` 视图） |
-| POST | `/api/items` | 新建需求，按角色自动实例化流水线与待办 |
-| GET | `/api/items/:id` | 详情：`{item, stages, todos, blockers, deliverables}` |
-| PATCH | `/api/items/:id/due` | 设置整体交付 DDL |
-| POST | `/api/items/:id/suspend` · `/resume` · `/close` · `/reopen` | 挂起 / 恢复 / 关闭 / 重开 |
-| POST | `/api/items/:id/note` | 记一条进展（支持 `occurredAt` 回填） |
-| GET | `/api/items/:id/timeline` | 事件时间线（`?includeVoided=true` 含已作废） |
-| PATCH | `/api/stages/:id/due` | 设置阶段 DDL（`plannedStart` / `plannedEnd`） |
-| POST | `/api/stages/:id/advance` | 推进阶段 `{outcome, forced, reason, closeBlockers}` |
-| POST | `/api/stages/:id/suspend` · `/resume` | 阶段级挂起 / 恢复 |
-| POST | `/api/todos` · PATCH `/api/todos/:id` | 建待办 / 勾选 |
-| POST | `/api/blockers` · PATCH `/api/blockers/:id` | 建阻塞 / 解除 |
-| GET | `/api/items/:id/deliverables` | 交付物与版本列表 |
-| POST | `/api/deliverables` (multipart) | 新建交付物并上传首个版本 |
-| POST | `/api/deliverables/:id/versions` (multipart) | 给已有交付物加版本 |
-| PATCH | `/api/deliverables/:id` | 设为 / 取消必交项 |
-| GET | `/api/files/:sha256` | 按内容哈希下载 |
-| GET | `/api/palette/query?q=` | 命令面板候选 + **人话预览** |
-| POST | `/api/palette/execute` | 执行命令（`{input, currentItemId}`） |
-| GET | `/api/reports` | 汇报列表 + 可用模板名 |
-| POST | `/api/reports/generate` | 生成草稿（区间自动接上一次定稿） |
-| GET · PUT · DELETE | `/api/reports/:id` | 读取 / 保存正文 / 删除草稿 |
-| POST | `/api/reports/:id/finalize` · `/unfinalize` | 定稿 / 取消定稿 |
-| GET | `/api/projects?kind=&includeArchived=` | 项目列表（含子需求数、未解除阻塞数、最近活动） |
-| POST | `/api/projects` | 新建项目（看护型必填 `watchFor`） |
-| GET | `/api/projects/:id` | 项目详情：说明、子需求、未解除阻塞、最近活动 |
-| GET | `/api/projects/:id/timeline` | 项目级事件流 |
-| PUT | `/api/projects/:id` | 改名称 / 说明 / 看护条件 / 截止日期 |
-| POST | `/api/projects/:id/handoff` | 交接：改负责人 + 把在途子需求、阻塞、看护条件记进事件 |
-| POST | `/api/projects/:id/accept` | 接手方确认接手 —— **在这之前它仍留在交出方的看护清单里** |
-| POST | `/api/projects/:id/reclaim` | 把责任收回来（没有它，交出去的项目就永远回不来） |
-| POST | `/api/projects/:id/archive` · `/unarchive` | 归档 / 取消归档（有在途子需求时拒绝归档） |
-| GET | `/api/search?q=&kind=&limit=` | 全文检索（备注 / 待办 / 交付物 / 阻塞 / 项目说明） |
-| POST | `/api/search/reindex` | 重建索引（正常用不上，索引漂了时的对账手段） |
-
-## 进度
-
-- [x] **P1 服务端**：schema + 迁移运行器、事件写入服务层、流水线实例化、阶段流转、挂起 / 关闭 / 重开
-- [x] **P1 服务端**：驾驶舱七桶分桶与打分、交付物内容寻址上传与版本、需求与阶段 DDL、命令面板、时间线
-- [x] **P1 前端**：仪表盘、需求列表与筛选、需求详情、命令面板
-- [x] **P2 汇报**：草稿生成（区间自动衔接）、可编辑模板、编辑 / 定稿 / 取消定稿 / 复制
-- [x] **P2 项目层**：看护型项目（事件驱动、不进时间桶）、子需求、交接与待接收、收回、归档
-- [x] **P2 命令面板**：Tab 补全（命令名 / 需求编号 / 阶段名 / 枚举修饰符）、方向键选择、预览即承诺
-- [x] **P2 全文检索**：7 张源表一个索引（FTS5 + trigram）、触发器保证不过期、命中片段高亮、按类别筛选
-- [ ] **P3**：git 关联、CLI、docx 导出
-
-## 隐私：真实数据不要进这个仓库
-
-`data/` 已经在 `.gitignore` 里。想在**不碰真实数据**的前提下试东西（演示、截图、演练），
-把数据目录指到别处、再换个端口即可：
-
-```powershell
-$env:MANAGER_DATA_DIR = 'C:\codes\manager\.scratch-data'
-$env:PORT = '5179'
-pnpm start
-```
-
-`MANAGER_DATA_DIR` 和 `PORT` 都支持环境变量覆盖，`.scratch-data/` 也已加入 `.gitignore`。
+MIT License。
