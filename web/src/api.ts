@@ -7,6 +7,9 @@ import type {
   DeliverableCategory,
   DeliverableWithVersions,
   DropFileResult,
+  FolderNode,
+  FolderRow,
+  ItemLinkRow,
   EventRow,
   HandoffResult,
   ItemDetail,
@@ -203,9 +206,12 @@ export const api = {
    * 拖进来就加入：一次多个文件，服务端从文件名推名字和类别、
    * 同名归到同一条（认作新版本）、内容没变就跳过。
    */
-  dropDeliverables: (itemId: number, stageId: number | null, files: File[]) => {
+  dropDeliverables: (itemId: number, target: { stageId: number | null; folderId?: number | null }, files: File[]) => {
     const fd = new FormData();
-    if (stageId !== null) fd.set('stageId', String(stageId));
+    if (target.stageId !== null) fd.set('stageId', String(target.stageId));
+    if (target.folderId !== undefined && target.folderId !== null) {
+      fd.set('folderId', String(target.folderId));
+    }
     for (const f of files) fd.append('file', f);
     return request<{ results: DropFileResult[] }>(`/api/items/${itemId}/deliverables/drop`, {
       method: 'POST',
@@ -224,6 +230,58 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ category }),
     }),
+
+  /** 把交付物归到某个文件夹（null = 根目录）。只改归置，不碰阶段 */
+  moveDeliverable: (deliverableId: number, folderId: number | null) =>
+    request<{ ok: true }>(`/api/deliverables/${deliverableId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ folderId }),
+    }),
+
+  renameDeliverable: (deliverableId: number, name: string) =>
+    request<{ ok: true }>(`/api/deliverables/${deliverableId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name }),
+    }),
+
+  // ---- 需求链接 ----------------------------------------------------------
+
+  listLinks: (itemId: number) =>
+    request<{ links: ItemLinkRow[] }>(`/api/items/${itemId}/links`),
+
+  addLink: (itemId: number, body: { url: string; label?: string }) =>
+    request<ItemLinkRow>(`/api/items/${itemId}/links`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateLink: (linkId: number, patch: { label?: string; url?: string }) =>
+    request<ItemLinkRow>(`/api/links/${linkId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  removeLink: (linkId: number) =>
+    request<{ ok: true }>(`/api/links/${linkId}`, { method: 'DELETE' }),
+
+  // ---- 交付物文件夹 ------------------------------------------------------
+
+  folderTree: (itemId: number) => request<{ tree: FolderNode }>(`/api/items/${itemId}/tree`),
+
+  createFolder: (itemId: number, body: { name: string; parentId?: number | null }) =>
+    request<FolderRow>(`/api/items/${itemId}/folders`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateFolder: (folderId: number, patch: { name?: string; parentId?: number | null }) =>
+    request<FolderRow>(`/api/folders/${folderId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  deleteFolder: (folderId: number) =>
+    request<{ ok: true }>(`/api/folders/${folderId}`, { method: 'DELETE' }),
 
   paletteQuery: (q: string, currentItemId?: number | null) =>
     request<PaletteQueryResult>(

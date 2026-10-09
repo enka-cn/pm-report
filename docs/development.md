@@ -38,6 +38,17 @@
 hook 一律提到所有提前 return 之上。
 
 改完前端建议真加载一遍所有路由看看有没有白屏 —— 光跑 typecheck 不够。
+仓库里有现成的：
+
+```powershell
+pnpm build
+pnpm start                                   # 另开一个窗口
+node scripts/smoke-pages.mjs                 # 默认 http://127.0.0.1:5178
+node scripts/smoke-pages.mjs http://127.0.0.1:5179
+```
+
+它会自己起一个 headless Edge（用完关掉），逐个路由加载并报告渲染字符数、root 子节点数和控制台异常。
+需求 id 是从接口查的，所以换一份数据也能跑。
 
 ## 开发模式
 
@@ -105,7 +116,14 @@ pnpm start
 | POST | `/api/deliverables` (multipart) | 新建交付物并上传首个版本 |
 | POST | `/api/items/:id/deliverables/drop` (multipart) | **拖进来就加入**：多文件、自动命名与分类、同名认版本 |
 | POST | `/api/deliverables/:id/versions` (multipart) | 给已有交付物加版本 |
-| PATCH | `/api/deliverables/:id` | 改类别 / 设为取消必交项（只改传了的字段） |
+| PATCH | `/api/deliverables/:id` | 改名称 / 类别 / 所在文件夹 / 必交项（只改传了的字段） |
+| GET | `/api/items/:id/links` | 需求上的链接 |
+| POST | `/api/items/:id/links` | 加链接（只收 http / https） |
+| PATCH · DELETE | `/api/links/:id` | 改 / 删链接 |
+| GET | `/api/items/:id/tree` | 需求级文件树（`GET /api/items/:id` 里也带一份） |
+| POST | `/api/items/:id/folders` | 新建文件夹（带 `parentId` 就是嵌套） |
+| PATCH | `/api/folders/:id` | 改名 / 移动（同一个事务，带环检测） |
+| DELETE | `/api/folders/:id` | 删文件夹（非空拒绝） |
 | GET | `/api/files/:sha256` | 按内容哈希下载 |
 | GET | `/api/palette/query?q=&currentItemId=` | 命令面板候选 + 补全上下文 + **人话预览** |
 | POST | `/api/palette/execute` | 执行命令（`{input, currentItemId}`） |

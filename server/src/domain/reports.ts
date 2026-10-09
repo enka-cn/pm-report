@@ -319,6 +319,19 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
         removed_todos,
       };
     })
+    // 事件全部落在「没有渲染分支」的类型上时，会得到一条有标题没内容的条目。
+    // 宁可整条不出现，也不要汇报里冒出空壳 —— 那是给主管看的东西。
+    // 同时这也是唯一兜底：以后加了新事件类型却忘了在这里加分支，不会渲染出空标题。
+    .filter(
+      (p) =>
+        p.transitions.length > 0 ||
+        p.deliverables.length > 0 ||
+        p.closed_blockers.length > 0 ||
+        p.notes.length > 0 ||
+        p.extra.length > 0 ||
+        p.done_todos > 0 ||
+        p.removed_todos > 0,
+    )
     .sort((a, b) => a.code.localeCompare(b.code));
 
   // ---- 三、下区间计划 ----

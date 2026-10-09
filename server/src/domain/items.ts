@@ -15,6 +15,8 @@ import { listEventsInRange, listTimeline, recordEvent } from './events.ts';
 import { activeStage, listBlockers, listStages, listTodos, startStageInTx } from './stages.ts';
 import { resolvePipeline } from './pipeline.ts';
 import { listDeliverables } from './deliverables.ts';
+import { folderTree } from './folders.ts';
+import { listLinks } from './links.ts';
 import { assertDateOnly } from './dates.ts';
 
 // ---------------------------------------------------------------------------
@@ -161,6 +163,8 @@ export function getItem(db: Db, itemId: number): ItemDetail | null {
     todos: listTodos(db, itemId),
     blockers: listBlockers(db, itemId),
     deliverables: listDeliverables(db, itemId),
+    links: listLinks(db, itemId),
+    tree: folderTree(db, itemId),
   };
 }
 

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   DeliverableCategory,
   EventRow,
+  FolderNode,
   ItemDetail as ItemData,
   StageRow,
 } from '@manager/shared';
@@ -13,6 +14,8 @@ import { navigate } from '../lib/router';
 import { fmtDay, fmtTime, toDateInput } from '../lib/format';
 import { summarizeDrop, useFileDrop } from '../lib/drop';
 import { ConditionBadge, RoleBadge, StageKindLabel } from './Badges';
+import { ItemFileTree } from './ItemFileTree';
+import { ItemLinks } from './ItemLinks';
 import { Field, Hint, Panel, PromptRow, btnDanger, btnGhost, btnPrimary, inputCls } from './ui';
 
 export function ItemDetail({ id, stageId }: { id: number; stageId: number | null }) {
@@ -38,25 +41,38 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
   // 放在 `if (!detail) return` 后面就会变成「加载中那次不调用、加载完调用」，
   // React 直接抛 #310 白屏，而 tsc 查不出来。
   // 回调要用的数据放 ref：它在 drop 那一刻才跑，拿不到当次渲染的闭包。
-  const dropCtx = useRef({ stages: [] as StageRow[], defaultStageId: null as number | null });
+  const dropCtx = useRef({
+    stages: [] as StageRow[],
+    folders: new Map<number, string>(),
+    defaultStageId: null as number | null,
+  });
   if (detail) {
     dropCtx.current = {
       stages: detail.stages,
+      folders: folderNames(detail.tree),
       defaultStageId: stageId ?? detail.item.active_stage_id,
     };
   }
 
-  const drop = useFileDrop((files, targetId) => {
-    const { stages, defaultStageId } = dropCtx.current;
-    const stageIdToUse = targetId ?? defaultStageId;
-    const stageName = stages.find((s) => s.id === stageIdToUse)?.name ?? '不属于任何阶段';
+  const drop = useFileDrop((files, target) => {
+    const { stages, folders, defaultStageId } = dropCtx.current;
+    // 落在文件夹上时不改阶段：文件和阶段是两个轴，拖进 assets/ 不该让它脱离当前阶段
+    const landingStage = target.stageId ?? defaultStageId;
+    const where =
+      target.folderId !== null
+        ? `文件夹「${folders.get(target.folderId) ?? ''}」`
+        : `「${stages.find((s) => s.id === landingStage)?.name ?? '不属于任何阶段'}」`;
 
     void (async () => {
       try {
-        const { results } = await api.dropDeliverables(id, stageIdToUse, files);
+        const { results } = await api.dropDeliverables(
+          id,
+          { stageId: landingStage, folderId: target.folderId },
+          files,
+        );
         const { ok, failed } = summarizeDrop(results);
-        if (failed.length > 0) notice.fail(`加入「${stageName}」：${ok}\n${failed.join('\n')}`);
-        else notice.ok(`加入「${stageName}」：${ok}`);
+        if (failed.length > 0) notice.fail(`加入${where}：${ok}\n${failed.join('\n')}`);
+        else notice.ok(`加入${where}：${ok}`);
         await queryClient.invalidateQueries();
       } catch (err) {
         notice.fail(messageOf(err));
@@ -72,16 +88,18 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
   const selected =
     detail.stages.find((s) => s.id === (stageId ?? item.active_stage_id)) ?? detail.stages[0];
 
-  const bannerStage =
-    detail.stages.find((s) => s.id === (drop.targetId ?? selected?.id))?.name ??
-    '不属于任何阶段';
+  const hoveredFolder = drop.target.folderId === null ? null : folderNames(detail.tree).get(drop.target.folderId);
+  const bannerWhere =
+    hoveredFolder != null
+      ? `文件夹「${hoveredFolder}」`
+      : `「${detail.stages.find((s) => s.id === (drop.target.stageId ?? selected?.id))?.name ?? '不属于任何阶段'}」`;
 
   return (
     <div className="relative mx-auto max-w-[1400px] px-6 py-5" {...drop.handlers}>
       {drop.active && (
         <div className="pointer-events-none fixed inset-x-0 top-0 z-50 flex justify-center pt-4">
           <div className="rounded-full border border-sky-500/60 bg-zinc-900/95 px-4 py-2 text-sm text-sky-200 shadow-xl">
-            松手即加入「{bannerStage}」
+            松手即加入{bannerWhere}
             {drop.count > 1 && ` · ${drop.count} 个文件`}
             <span className="ml-2 text-xs text-zinc-500">
               悬到某个阶段上可以指定阶段
@@ -169,7 +187,7 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
             <StagePipeline
               detail={detail}
               selectedId={selected?.id ?? null}
-              dropTarget={drop.active ? drop.targetId : null}
+              dropTarget={drop.active ? drop.target.stageId : null}
             />
           </Panel>
         </div>
@@ -180,7 +198,7 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
               detail={detail}
               stage={selected}
               act={act}
-              dropTarget={drop.active ? drop.targetId : null}
+              dropTarget={drop.active ? drop.target.stageId : null}
             />
           ) : (
             <Hint>这个需求没有阶段。</Hint>
@@ -189,12 +207,25 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
 
         <div className="space-y-4">
           <BlockersPanel detail={detail} act={act} />
+          <ItemLinks detail={detail} act={act} />
           <NotePanel detail={detail} act={act} />
           <TimelinePanel itemId={item.id} stages={detail.stages} />
         </div>
       </div>
+
+      {/* 需求级文件树：横跨整幅，因为树是要「找东西」的，窄栏里展不开 */}
+      <div className="mt-4">
+        <ItemFileTree detail={detail} act={act} />
+      </div>
     </div>
   );
+}
+
+/** 文件树里 id → 文件夹名，给拖放提示条用 */
+function folderNames(node: FolderNode, into = new Map<number, string>()): Map<number, string> {
+  if (node.folder) into.set(node.folder.id, node.folder.name);
+  for (const child of node.children) folderNames(child, into);
+  return into;
 }
 
 type Act = <T>(fn: () => Promise<T>, success?: (r: T) => string) => Promise<void>;

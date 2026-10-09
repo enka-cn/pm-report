@@ -76,6 +76,7 @@ export const SEARCH_KIND_LABELS: Record<SearchKind, string> = {
   blocker: '阻塞',
   deliverable: '交付物',
   project: '项目',
+  link: '链接',
 };
 
 export function meta(): MetaLabels {

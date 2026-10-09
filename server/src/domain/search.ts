@@ -21,6 +21,7 @@ export const SEARCH_KINDS: readonly SearchKind[] = [
   'blocker',
   'deliverable',
   'project',
+  'link',
 ];
 
 interface FtsRow {
@@ -205,6 +206,11 @@ export function rebuildSearchIndex(db: Db): number {
      SELECT 600000000 + id, 'project', id, NULL, id, updated_at, code || ' ' || name,
             IFNULL(description, '') || IFNULL(' ' || watch_for, '')
        FROM project WHERE is_default = 0`,
+    `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
+     SELECT 700000000 + id, 'link', id, item_id,
+            (SELECT project_id FROM item WHERE id = item_link.item_id), created_at,
+            '', label || ' ' || url
+       FROM item_link`,
   ];
 
   for (const sql of statements) run(db, sql);

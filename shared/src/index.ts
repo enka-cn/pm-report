@@ -54,6 +54,8 @@ export type EventType =
   | 'ddl_change'
   | 'role_change'
   | 'note'
+  | 'link_added'
+  | 'link_removed'
   // 项目级
   | 'project_created'
   | 'project_updated'
@@ -169,7 +171,10 @@ export interface TodoRow {
 export interface DeliverableRow {
   id: number;
   item_id: number;
+  /** 在流程里的位置（决定阶段卡点）。和 folder_id 正交，互不干涉 */
   stage_id: number | null;
+  /** 你自己怎么归置。NULL = 根目录 */
+  folder_id: number | null;
   name: string;
   category: DeliverableCategory;
   required: number;
@@ -380,6 +385,16 @@ export interface ItemDetail {
   todos: TodoRow[];
   blockers: BlockerRow[];
   deliverables: DeliverableWithVersions[];
+  /** 挂在需求上的链接（内部 wiki 之类） */
+  links: ItemLinkRow[];
+  /**
+   * 需求级文件树（根节点是虚的）。
+   *
+   * 里面装的交付物和上面的 `deliverables` 是同一批 —— 故意的：
+   * 阶段视图要「按阶段分」，文件树要「按文件夹分」，是同一份数据的两个切面。
+   * 让服务端把树建好，客户端就不用自己拼，也就能测。
+   */
+  tree: FolderNode;
 }
 
 /**
@@ -478,7 +493,14 @@ export interface PaletteExecuteResult {
 // ---- 元信息 ----
 
 /** 全文检索：索引里的一条文档属于哪张源表 */
-export type SearchKind = 'item' | 'note' | 'todo' | 'blocker' | 'deliverable' | 'project';
+export type SearchKind =
+  | 'item'
+  | 'note'
+  | 'todo'
+  | 'blocker'
+  | 'deliverable'
+  | 'project'
+  | 'link';
 
 export interface SearchHit {
   kind: SearchKind;
@@ -503,8 +525,42 @@ export interface SearchResult {
   counts: Record<SearchKind, number>;
 }
 
-export interface MetaLabels {
-  roles: Record<Role, string>;
+// ---------------------------------------------------------------------------
+// 需求链接与文件树
+// ---------------------------------------------------------------------------
+
+/** 挂在需求上的一个链接（内部 wiki、设计稿、看板……） */
+export interface ItemLinkRow {
+  id: number;
+  item_id: number;
+  label: string;
+  url: string;
+  created_at: string;
+}
+
+/** 交付物文件夹。需求级，parent_id 为 NULL 表示根层。 */
+export interface FolderRow {
+  id: number;
+  item_id: number;
+  parent_id: number | null;
+  name: string;
+  created_at: string;
+}
+
+/**
+ * 文件树的一个节点。
+ *
+ * 根节点是**虚的**（`folder` 为 null），只用来装根目录下的东西 ——
+ * 这样递归渲染时不用为「根」写特例。
+ */
+export interface FolderNode {
+  folder: FolderRow | null;
+  children: FolderNode[];
+  /** 直接放在这一层里的交付物（不含子文件夹里的） */
+  files: DeliverableWithVersions[];
+}
+
+export interface MetaLabels {  roles: Record<Role, string>;
   conditions: Record<ItemCondition, string>;
   stageKinds: Record<StageKind, string>;
   stageOutcomes: Record<StageOutcome, string>;

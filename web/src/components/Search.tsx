@@ -15,6 +15,7 @@ const KIND_TONE: Record<SearchKind, string> = {
   blocker: 'bg-amber-500/15 text-amber-300',
   deliverable: 'bg-violet-500/15 text-violet-300',
   project: 'bg-cyan-500/15 text-cyan-300',
+  link: 'bg-rose-500/15 text-rose-300',
 };
 
 export function Search({ q }: { q: string | null }) {

@@ -43,9 +43,19 @@ import {
   findVersionBySha,
   isDeliverableCategory,
   listDeliverables,
+  renameDeliverable,
   setDeliverableCategory,
   setDeliverableRequired,
 } from './domain/deliverables.ts';
+import {
+  createFolder,
+  deleteFolder,
+  folderTree,
+  getFolder,
+  moveDeliverable,
+  updateFolder,
+} from './domain/folders.ts';
+import { addLink, listLinks, removeLink, updateLink } from './domain/links.ts';
 import { absolutePathOf, relPathOf, storeFile } from './domain/storage.ts';
 import { meta } from './domain/labels.ts';
 import { executePalette, helpText, queryPalette } from './domain/palette.ts';
@@ -326,6 +336,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     const itemId = asNumber(c.req.param('id'), 'id')!;
     const form = await c.req.formData();
     const stageId = asNumber(form.get('stageId'), 'stageId', false) ?? null;
+    const folderId = asNumber(form.get('folderId'), 'folderId', false) ?? null;
 
     const uploads = await readUploadedFiles(form);
     const files = uploads.map((upload) => {
@@ -339,7 +350,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
       };
     });
 
-    return c.json({ results: dropDeliverables(db, { itemId, stageId, files }) }, 201);
+    return c.json({ results: dropDeliverables(db, { itemId, stageId, folderId, files }) }, 201);
   });
 
   app.post('/api/deliverables/:id/versions', async (c) => {
@@ -374,6 +385,12 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
         throw new Error(`交付物类别不合法: ${String(body['category'])}`);
       }
       setDeliverableCategory(db, id, body['category']);
+    }
+    if (body['folderId'] !== undefined) {
+      moveDeliverable(db, id, asNumber(body['folderId'], 'folderId', false) ?? null);
+    }
+    if (body['name'] !== undefined) {
+      renameDeliverable(db, id, asString(body['name'], 'name')!);
     }
     return c.json({ ok: true });
   });
@@ -655,6 +672,79 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   app.post('/api/search/reindex', (c) => {
     const indexed = rebuildSearchIndex(db);
     return c.json({ ok: true, indexed });
+  });
+
+  // ---- 需求链接 ----------------------------------------------------------
+
+  app.get('/api/items/:id/links', (c) =>
+    c.json({ links: listLinks(db, asNumber(c.req.param('id'), 'id')!) }),
+  );
+
+  app.post('/api/items/:id/links', async (c) => {
+    const itemId = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    return c.json(
+      addLink(db, {
+        itemId,
+        url: asString(body['url'], 'url')!,
+        label: asString(body['label'], 'label', false),
+      }),
+      201,
+    );
+  });
+
+  app.patch('/api/links/:id', async (c) => {
+    const id = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    return c.json(
+      updateLink(db, id, {
+        label: asString(body['label'], 'label', false),
+        url: asString(body['url'], 'url', false),
+      }),
+    );
+  });
+
+  app.delete('/api/links/:id', (c) => {
+    removeLink(db, asNumber(c.req.param('id'), 'id')!);
+    return c.json({ ok: true });
+  });
+
+  // ---- 交付物文件夹 ------------------------------------------------------
+
+  app.get('/api/items/:id/tree', (c) =>
+    c.json({ tree: folderTree(db, asNumber(c.req.param('id'), 'id')!) }),
+  );
+
+  app.post('/api/items/:id/folders', async (c) => {
+    const itemId = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    return c.json(
+      createFolder(db, {
+        itemId,
+        parentId: asNumber(body['parentId'], 'parentId', false) ?? null,
+        name: asString(body['name'], 'name')!,
+      }),
+      201,
+    );
+  });
+
+  app.patch('/api/folders/:id', async (c) => {
+    const id = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    return c.json(
+      updateFolder(db, id, {
+        name: asString(body['name'], 'name', false),
+        parentId:
+          body['parentId'] === undefined
+            ? undefined
+            : (asNumber(body['parentId'], 'parentId', false) ?? null),
+      }),
+    );
+  });
+
+  app.delete('/api/folders/:id', (c) => {
+    deleteFolder(db, asNumber(c.req.param('id'), 'id')!);
+    return c.json({ ok: true });
   });
 
   // ---- 前端产物 ----------------------------------------------------------

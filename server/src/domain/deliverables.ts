@@ -21,6 +21,8 @@ export interface NewFileInput {
 export interface AddDeliverableInput {
   itemId: number;
   stageId?: number | null;
+  /** 归到哪个文件夹。不传就是根目录 */
+  folderId?: number | null;
   name: string;
   category?: DeliverableCategory;
   /** 必交项会变成阶段卡点：未上传时推进阶段需要强制确认 */
@@ -81,10 +83,11 @@ export function addDeliverable(db: Db, input: AddDeliverableInput): DeliverableW
     const when = nowIso();
     const info = run(
       db,
-      `INSERT INTO deliverable (item_id, stage_id, name, category, required, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO deliverable (item_id, stage_id, folder_id, name, category, required, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       input.itemId,
       input.stageId ?? null,
+      input.folderId ?? null,
       input.name,
       input.category ?? 'other',
       input.required ? 1 : 0,
@@ -231,6 +234,29 @@ export function setDeliverableCategory(
   });
 }
 
+/**
+ * 改交付物名。
+ *
+ * 拖进来的名字是从文件名来的（`QQ图片20261008` 这种），不能改就没法看了。
+ * 原始文件名不受影响 —— 它在版本的 `original_filename` 里。
+ */
+export function renameDeliverable(db: Db, deliverableId: number, name: string): void {
+  const clean = name.trim();
+  if (!clean) throw new Error('交付物名称不能为空');
+
+  transaction(db, () => {
+    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+    run(
+      db,
+      'UPDATE deliverable SET name = ?, updated_at = ? WHERE id = ?',
+      clean,
+      nowIso(),
+      deliverableId,
+    );
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 拖进来就加入
 // ---------------------------------------------------------------------------
@@ -295,6 +321,8 @@ export interface DropInput {
   itemId: number;
   /** 落到哪个阶段。不传就是「不属于任何阶段」 */
   stageId?: number | null;
+  /** 归到哪个文件夹。不传就是根目录 */
+  folderId?: number | null;
   /** 已经落盘的文件元数据（storeFile 的结果） */
   files: NewFileInput[];
 }
@@ -331,6 +359,7 @@ export function dropDeliverables(db: Db, input: DropInput): DropFileResult[] {
         const created = addDeliverable(db, {
           itemId: input.itemId,
           stageId: input.stageId ?? null,
+          folderId: input.folderId ?? null,
           name,
           category: guessCategory(file.filename),
           required: false,
