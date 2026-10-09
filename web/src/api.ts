@@ -14,17 +14,19 @@ import type {
   HandoffResult,
   ItemDetail,
   ItemViewRow,
-  Meta,
+  MetaResponse,
   PaletteExecuteResult,
   PaletteQueryResult,
   ProjectDetail,
   ProjectKind,
   ProjectRow,
   ProjectSummary,
+  PurgeResult,
   ReportRow,
   Role,
   SearchKind,
   SearchResult,
+  StorageUsage,
   StageOutcome,
   TodoRow,
 } from '@manager/shared';
@@ -71,7 +73,7 @@ function query(params: Record<string, string | number | boolean | undefined | nu
 }
 
 export const api = {
-  meta: () => request<Meta>('/api/meta'),
+  meta: () => request<MetaResponse>('/api/meta'),
 
   dashboard: () => request<DashboardPayload>('/api/dashboard'),
 
@@ -243,6 +245,21 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ name }),
     }),
+
+  /** 移除（软删除）：只让它从各处消失，磁盘上的字节还在 */
+  removeDeliverable: (deliverableId: number, reason?: string) =>
+    request<{ ok: true }>(`/api/deliverables/${deliverableId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ reason }),
+    }),
+
+  restoreDeliverable: (deliverableId: number) =>
+    request<{ ok: true }>(`/api/deliverables/${deliverableId}/restore`, { method: 'POST' }),
+
+  storageUsage: () => request<StorageUsage>('/api/storage'),
+
+  /** 回收磁盘：删掉没有任何在册交付物引用的字节 */
+  purgeFiles: () => request<PurgeResult>('/api/storage/purge', { method: 'POST' }),
 
   // ---- 需求链接 ----------------------------------------------------------
 

@@ -124,6 +124,27 @@ pnpm start
 | POST | `/api/items/:id/folders` | 新建文件夹（带 `parentId` 就是嵌套） |
 | PATCH | `/api/folders/:id` | 改名 / 移动（同一个事务，带环检测） |
 | DELETE | `/api/folders/:id` | 删文件夹（非空拒绝） |
+| DELETE | `/api/deliverables/:id` | 移除交付物（软删除，不动磁盘） |
+| POST | `/api/deliverables/:id/restore` | 从「已移除」恢复 |
+| GET | `/api/storage` | 磁盘占用与可回收量 |
+| POST | `/api/storage/purge` | 回收磁盘（删掉无引用的字节） |
+
+## 为什么「移除」和「回收」是两步
+
+迁移 006 之前，交付物在数据库层面删不掉：`event.deliverable_id` 是 `ON DELETE SET NULL`，
+删一行 `deliverable` 会触发「把事件里的引用置空」，而那是一次 `UPDATE event` ——
+直接撞上 append-only 触发器。**但那是外键写法造成的事故，不是原则。**
+
+原则只有一条：**事件日志必须 append-only**，它记录「发生过什么」。
+它**不蕴含**「文件字节必须永远留着」—— 那是保留策略，两码事。
+日志写着「某时刻上传了《设计说明》v2」，即使后来文件被清掉，这句话依然是真的。
+
+所以：`removed_at` 软删除保住日志完整性，字节回收单独一步保住磁盘。
+外键一个没动，200G 能收回来，误点也还能撤回。
+
+**改这几个查询时注意 `removed_at IS NULL`**：`listDeliverables`、`listRemovedDeliverables`（反过来）、
+`missingRequiredDeliverables`、`folderContents`、`dropDeliverables` 的同名查找、`rebuildSearchIndex`。
+漏一处就会出现「移除的东西在某个角落冒出来」。`server/tests/removal.test.ts` 第一条测试专门盯这个。
 | GET | `/api/files/:sha256` | 按内容哈希下载 |
 | GET | `/api/palette/query?q=&currentItemId=` | 命令面板候选 + 补全上下文 + **人话预览** |
 | POST | `/api/palette/execute` | 执行命令（`{input, currentItemId}`） |

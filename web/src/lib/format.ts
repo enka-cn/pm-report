@@ -26,3 +26,19 @@ export function todayIso(): string {
 export function toDateInput(value: string | null): string {
   return value ? value.slice(0, 10) : '';
 }
+
+/**
+ * 给人看的体积。**GB / TB 也要能显示** —— 误传一个模型包是真实会发生的事，
+ * 那时候显示成「204800.0 MB」等于没说。
+ */
+export function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}

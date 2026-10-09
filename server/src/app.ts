@@ -10,7 +10,7 @@ import type {
   SearchKind,
 } from '@manager/shared';
 import type { Db } from './db/index.ts';
-import { FILES_DIR, WEB_DIST } from './config.ts';
+import { FILES_DIR, WEB_DIST, loadSettings } from './config.ts';
 import {
   closeItem,
   createItem,
@@ -43,9 +43,13 @@ import {
   findVersionBySha,
   isDeliverableCategory,
   listDeliverables,
+  purgeFiles,
+  removeDeliverable,
   renameDeliverable,
+  restoreDeliverable,
   setDeliverableCategory,
   setDeliverableRequired,
+  storageUsage,
 } from './domain/deliverables.ts';
 import {
   createFolder,
@@ -151,7 +155,13 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   app.get('/api/pipelines', (c) => c.json({ pipelines: templates }));
 
   /** 前端要用的中文标签等元信息，避免前后端各写一份然后漂移 */
-  app.get('/api/meta', (c) => c.json({ ...meta(), paletteHelp: helpText() }));
+  app.get('/api/meta', (c) =>
+    c.json({
+      ...meta(),
+      paletteHelp: helpText(),
+      limits: { maxUploadMb: loadSettings().upload.max_request_mb },
+    }),
+  );
 
   // ---- 命令面板 ----------------------------------------------------------
   //
@@ -303,6 +313,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   });
 
   app.post('/api/deliverables', async (c) => {
+    assertUploadSize(c);
     const form = await c.req.formData();
     const upload = await readUploadedFile(form);
     const stored = storeFile(upload.bytes, filesDir);
@@ -333,6 +344,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
    * 同名归到同一条（认作新版本）、内容没变就跳过。详见 dropDeliverables 的注释。
    */
   app.post('/api/items/:id/deliverables/drop', async (c) => {
+    assertUploadSize(c);
     const itemId = asNumber(c.req.param('id'), 'id')!;
     const form = await c.req.formData();
     const stageId = asNumber(form.get('stageId'), 'stageId', false) ?? null;
@@ -354,6 +366,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   });
 
   app.post('/api/deliverables/:id/versions', async (c) => {
+    assertUploadSize(c);
     const id = asNumber(c.req.param('id'), 'id')!;
     const form = await c.req.formData();
     const upload = await readUploadedFile(form);
@@ -674,6 +687,25 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     return c.json({ ok: true, indexed });
   });
 
+  /**
+   * 上传前的闸门：**在解析 multipart 之前**按 Content-Length 挡掉超大请求。
+   *
+   * 必须在这儿挡。`c.req.formData()` 会把整个请求体读进内存，
+   * 等解析完再检查大小已经晚了 —— 那是 OOM，不是报错。
+   */
+  function assertUploadSize(c: Context): void {
+    const declared = Number(c.req.header('content-length') ?? '0');
+    const limit = loadSettings().upload.max_request_mb * 1024 * 1024;
+    if (declared > limit) {
+      const mb = (declared / 1024 / 1024).toFixed(1);
+      throw new Error(
+        `这次上传 ${mb} MB，超过了 ${loadSettings().upload.max_request_mb} MB 的上限。` +
+          `这个系统是放文档、截图、日志的；上百 G 的东西放共享盘，然后在需求的「链接」里加个入口。` +
+          `确实需要放宽就改 config/settings.yaml 的 upload.max_request_mb。`,
+      );
+    }
+  }
+
   // ---- 需求链接 ----------------------------------------------------------
 
   app.get('/api/items/:id/links', (c) =>
@@ -746,6 +778,31 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     deleteFolder(db, asNumber(c.req.param('id'), 'id')!);
     return c.json({ ok: true });
   });
+
+  // ---- 移除交付物与回收磁盘 ----------------------------------------------
+
+  /**
+   * 移除交付物（软删除）。
+   *
+   * 只是让它从各处消失，磁盘上的字节还在 —— 字节的回收是 `/api/storage/purge`。
+   * 分开是为了让「误点」可挽回，而 200G 一样能收回来。
+   */
+  app.delete('/api/deliverables/:id', async (c) => {
+    const id = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    removeDeliverable(db, id, asString(body['reason'], 'reason', false));
+    return c.json({ ok: true });
+  });
+
+  app.post('/api/deliverables/:id/restore', (c) => {
+    restoreDeliverable(db, asNumber(c.req.param('id'), 'id')!);
+    return c.json({ ok: true });
+  });
+
+  app.get('/api/storage', (c) => c.json(storageUsage(db, filesDir)));
+
+  /** 回收磁盘：删掉没有任何在册交付物引用的字节 */
+  app.post('/api/storage/purge', (c) => c.json(purgeFiles(db, filesDir)));
 
   // ---- 前端产物 ----------------------------------------------------------
   //

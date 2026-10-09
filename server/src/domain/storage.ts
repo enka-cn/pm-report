@@ -71,9 +71,44 @@ export function readStoredFile(relPath: string, filesDir: string = FILES_DIR): B
   return fs.readFileSync(absolutePathOf(relPath, filesDir));
 }
 
-/** 给人看的体积，汇报和界面里用 */
+/** 给人看的体积。大文件是真实存在的（误传的模型包），所以 GB / TB 也要能显示 */
 export function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit++;
+  }
+  return `${value.toFixed(1)} ${units[unit]}`;
+}
+
+export interface StoredFileOnDisk {
+  sha256: string;
+  abs: string;
+  bytes: number;
+}
+
+/**
+ * 遍历 data/files，列出真正躺在磁盘上的文件。
+ *
+ * 只看 `<两位十六进制>/<64 位 sha256>` 这个形状 —— 内容是寻址的，
+ * 不认识的目录名（比如残留的临时文件）一律不碰。
+ */
+export function listStoredFiles(filesDir: string = FILES_DIR): StoredFileOnDisk[] {
+  if (!fs.existsSync(filesDir)) return [];
+
+  const out: StoredFileOnDisk[] = [];
+  for (const shard of fs.readdirSync(filesDir)) {
+    const shardDir = path.join(filesDir, shard);
+    if (!fs.statSync(shardDir).isDirectory()) continue;
+
+    for (const name of fs.readdirSync(shardDir)) {
+      if (!/^[0-9a-f]{64}$/.test(name)) continue;
+      const abs = path.join(shardDir, name);
+      out.push({ sha256: name, abs, bytes: fs.statSync(abs).size });
+    }
+  }
+  return out;
 }

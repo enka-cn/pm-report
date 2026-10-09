@@ -201,7 +201,7 @@ export function rebuildSearchIndex(db: Db): number {
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
      SELECT 500000000 + id, 'deliverable', id, item_id,
             (SELECT project_id FROM item WHERE id = deliverable.item_id), updated_at, '', name
-       FROM deliverable`,
+       FROM deliverable WHERE removed_at IS NULL`,
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
      SELECT 600000000 + id, 'project', id, NULL, id, updated_at, code || ' ' || name,
             IFNULL(description, '') || IFNULL(' ' || watch_for, '')

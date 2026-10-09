@@ -45,6 +45,8 @@ export type EventType =
   | 'todo_reopened'
   | 'todo_removed'
   | 'deliverable_added'
+  | 'deliverable_removed'
+  | 'deliverable_restored'
   | 'blocker_open'
   | 'blocker_close'
   | 'suspend'
@@ -179,6 +181,11 @@ export interface DeliverableRow {
   category: DeliverableCategory;
   required: number;
   current_version_id: number | null;
+  /**
+   * 「移除」的时间。软删除 —— 行留着，界面各处都不再显示它。
+   * 字节的回收是**另一步**（见 purgeFiles）：记录和文件是两件事。
+   */
+  removed_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -387,6 +394,8 @@ export interface ItemDetail {
   deliverables: DeliverableWithVersions[];
   /** 挂在需求上的链接（内部 wiki 之类） */
   links: ItemLinkRow[];
+  /** 已经「移除」的交付物。留着是为了可逆，界面上折起来不碍事 */
+  removedDeliverables: DeliverableWithVersions[];
   /**
    * 需求级文件树（根节点是虚的）。
    *
@@ -560,6 +569,25 @@ export interface FolderNode {
   files: DeliverableWithVersions[];
 }
 
+/** 磁盘占用与可回收量。回收的是「没有任何在册交付物引用的字节」。 */
+export interface StorageUsage {
+  totalFiles: number;
+  totalBytes: number;
+  /** 移除交付物之后能收回来的部分 */
+  recoverableFiles: number;
+  recoverableBytes: number;
+  removedDeliverables: number;
+}
+
+export interface PurgeResult {
+  /** 删掉的版本记录数（都属于已移除的交付物） */
+  deletedVersions: number;
+  deletedFiles: number;
+  freedBytes: number;
+  /** 因为还有别的在册交付物引用同一份内容而保留下来的文件数（内容寻址去重） */
+  keptShared: number;
+}
+
 export interface MetaLabels {  roles: Record<Role, string>;
   conditions: Record<ItemCondition, string>;
   stageKinds: Record<StageKind, string>;
@@ -569,6 +597,16 @@ export interface MetaLabels {  roles: Record<Role, string>;
   categories: Record<DeliverableCategory, string>;
   projectKinds: Record<ProjectKind, string>;
   searchKinds: Record<SearchKind, string>;
+}
+
+/**
+ * `GET /api/meta` 的返回。
+ *
+ * `limits` 来自 settings.yaml 而不是标签表，所以放在这儿而不是 MetaLabels 里。
+ */
+export interface MetaResponse extends MetaLabels {
+  paletteHelp: string;
+  limits: { maxUploadMb: number };
 }
 
 /** GET /api/meta：中文标签的唯一来源，前端不再各自写一份 */

@@ -194,7 +194,7 @@ export function updateFolder(
   });
 }
 
-/** 该文件夹下直接放着的东西（不含子文件夹里的） */
+/** 该文件夹下直接放着的东西（不含子文件夹里的）。已移除的不算数。 */
 export function folderContents(
   db: Db,
   folderId: number,
@@ -203,7 +203,7 @@ export function folderContents(
     folders: all<{ id: number }>(db, 'SELECT id FROM folder WHERE parent_id = ?', folderId).length,
     files: all<{ id: number }>(
       db,
-      'SELECT id FROM deliverable WHERE folder_id = ?',
+      'SELECT id FROM deliverable WHERE folder_id = ? AND removed_at IS NULL',
       folderId,
     ).length,
   };

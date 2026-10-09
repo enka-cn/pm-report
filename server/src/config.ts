@@ -40,6 +40,15 @@ export interface Settings {
     default_criticality: number;
     code_prefix: string;
   };
+  upload: {
+    /**
+     * 一次上传的总量上限（MB）。
+     *
+     * 不只是「产品定位」问题（这个系统是放文档/截图/日志的），
+     * 更是因为 multipart 解析会把整个请求读进内存 —— 不设上限就是等着 OOM。
+     */
+    max_request_mb: number;
+  };
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +65,7 @@ const DEFAULT_SETTINGS: Settings = {
   },
   report: { default_days: 7 },
   item: { default_criticality: 3, code_prefix: 'REQ' },
+  upload: { max_request_mb: 512 },
 };
 
 function isRecord(v: unknown): v is Record<string, unknown> {

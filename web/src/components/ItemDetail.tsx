@@ -11,7 +11,7 @@ import { api, newDeliverableForm } from '../api';
 import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
-import { fmtDay, fmtTime, toDateInput } from '../lib/format';
+import { fmtDay, fmtTime, humanSize, toDateInput } from '../lib/format';
 import { summarizeDrop, useFileDrop } from '../lib/drop';
 import { ConditionBadge, RoleBadge, StageKindLabel } from './Badges';
 import { ItemFileTree } from './ItemFileTree';
@@ -21,6 +21,8 @@ import { Field, Hint, Panel, PromptRow, btnDanger, btnGhost, btnPrimary, inputCl
 export function ItemDetail({ id, stageId }: { id: number; stageId: number | null }) {
   const queryClient = useQueryClient();
   const notice = useNotice();
+  // 必须在所有提前 return 之前调用 —— hook 数量每次渲染必须一致（踩过 #310 白屏）
+  const meta = useMeta();
 
   const q = useQuery({ queryKey: ['item', id], queryFn: () => api.item(id) });
 
@@ -56,6 +58,18 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
 
   const drop = useFileDrop((files, target) => {
     const { stages, folders, defaultStageId } = dropCtx.current;
+
+    // 先按体积挡一道，让人立刻知道原因，而不是等一个失败的请求回来
+    const maxMb = meta.data?.limits.maxUploadMb ?? 512;
+    const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+    if (totalBytes > maxMb * 1024 * 1024) {
+      notice.fail(
+        `这批文件共 ${humanSize(totalBytes)}，超过了 ${maxMb} MB 的上传上限。` +
+          `大文件放共享盘，然后在需求的「链接」里加个入口。要放宽就改 config/settings.yaml 的 upload.max_request_mb。`,
+      );
+      return;
+    }
+
     // 落在文件夹上时不改阶段：文件和阶段是两个轴，拖进 assets/ 不该让它脱离当前阶段
     const landingStage = target.stageId ?? defaultStageId;
     const where =
@@ -550,6 +564,16 @@ function DeliverableList({
   async function upload(e: FormEvent): Promise<void> {
     e.preventDefault();
     if (!file) return;
+
+    const maxMb = meta.data?.limits.maxUploadMb ?? 512;
+    if (file.size > maxMb * 1024 * 1024) {
+      notice.fail(
+        `「${file.name}」有 ${humanSize(file.size)}，超过了 ${maxMb} MB 的上传上限。` +
+          `大文件放共享盘，然后在需求的「链接」里加个入口。要放宽就改 config/settings.yaml 的 upload.max_request_mb。`,
+      );
+      return;
+    }
+
     setBusy(true);
     try {
       const result =
@@ -649,7 +673,7 @@ function DeliverableList({
                   >
                     {current.original_filename}
                   </a>
-                  <span>{(current.size_bytes / 1024).toFixed(1)} KB</span>
+                  <span>{humanSize(current.size_bytes)}</span>
                   <span>{fmtTime(current.uploaded_at)}</span>
                 </div>
               )}

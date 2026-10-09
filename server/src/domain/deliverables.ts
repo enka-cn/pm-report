@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type {
   DeliverableCategory,
   DeliverableRow,
@@ -5,8 +6,9 @@ import type {
   DeliverableWithVersions,
   DropFileResult,
 } from '@manager/shared';
-import { all, lastId, nowIso, one, run, transaction, type Db } from '../db/index.ts';
+import { all, count, lastId, nowIso, one, run, transaction, type Db } from '../db/index.ts';
 import { recordEvent } from './events.ts';
+import { listStoredFiles } from './storage.ts';
 
 export interface NewFileInput {
   sha256: string;
@@ -164,10 +166,14 @@ export function getDeliverable(db: Db, deliverableId: number): DeliverableWithVe
 export function listDeliverables(db: Db, itemId: number, stageId?: number | null): DeliverableWithVersions[] {
   const rows =
     stageId === undefined
-      ? all<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE item_id = ? ORDER BY id', itemId)
+      ? all<DeliverableRow>(
+          db,
+          'SELECT * FROM deliverable WHERE item_id = ? AND removed_at IS NULL ORDER BY id',
+          itemId,
+        )
       : all<DeliverableRow>(
           db,
-          'SELECT * FROM deliverable WHERE item_id = ? AND stage_id IS ? ORDER BY id',
+          'SELECT * FROM deliverable WHERE item_id = ? AND stage_id IS ? AND removed_at IS NULL ORDER BY id',
           itemId,
           stageId,
         );
@@ -182,11 +188,29 @@ export function listDeliverables(db: Db, itemId: number, stageId?: number | null
   }));
 }
 
+/** 已移除的交付物。单独列出来，好让「移除」这件事是可逆的 */
+export function listRemovedDeliverables(db: Db, itemId: number): DeliverableWithVersions[] {
+  return all<DeliverableRow>(
+    db,
+    'SELECT * FROM deliverable WHERE item_id = ? AND removed_at IS NOT NULL ORDER BY removed_at DESC',
+    itemId,
+  ).map((d) => ({
+    ...d,
+    versions: all<DeliverableVersionRow>(
+      db,
+      'SELECT * FROM deliverable_version WHERE deliverable_id = ? ORDER BY version_no DESC',
+      d.id,
+    ),
+  }));
+}
+
 /** 该阶段还没上传的必交项。推进阶段时的卡点就是它。 */
 export function missingRequiredDeliverables(db: Db, stageId: number): DeliverableRow[] {
   return all<DeliverableRow>(
     db,
-    'SELECT * FROM deliverable WHERE stage_id = ? AND required = 1 AND current_version_id IS NULL ORDER BY id',
+    `SELECT * FROM deliverable
+      WHERE stage_id = ? AND required = 1 AND current_version_id IS NULL AND removed_at IS NULL
+      ORDER BY id`,
     stageId,
   );
 }
@@ -255,6 +279,163 @@ export function renameDeliverable(db: Db, deliverableId: number, name: string): 
       deliverableId,
     );
   });
+}
+
+// ---------------------------------------------------------------------------
+// 移除与回收 —— 「上传错了」的出路
+//
+// 分两步是刻意的：**记录**和**字节**是两件事。
+//   移除：行留下（removed_at 记时间），界面各处不再显示 —— 可逆
+//   回收：把没有任何在册交付物引用的字节从磁盘删掉 —— 不可逆，但也不是必须马上做
+// 合并成一步的话，误点一次就找不回来了；而分两步，200G 一样能收回来。
+// ---------------------------------------------------------------------------
+
+/** 移除一个交付物。软删除：行留着，「回收磁盘」时才真正动文件。 */
+export function removeDeliverable(db: Db, deliverableId: number, reason?: string): void {
+  transaction(db, () => {
+    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+    if (deliverable.removed_at) throw new Error(`「${deliverable.name}」已经移除过了`);
+
+    const when = nowIso();
+    run(db, 'UPDATE deliverable SET removed_at = ?, updated_at = ? WHERE id = ?', when, when, deliverableId);
+
+    recordEvent(db, {
+      type: 'deliverable_removed',
+      itemId: deliverable.item_id,
+      stageId: deliverable.stage_id,
+      deliverableId,
+      occurredAt: when,
+      note: reason ?? null,
+      payload: { name: deliverable.name, category: deliverable.category, reason: reason ?? null },
+    });
+  });
+}
+
+export function restoreDeliverable(db: Db, deliverableId: number): void {
+  transaction(db, () => {
+    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+    if (!deliverable.removed_at) throw new Error(`「${deliverable.name}」本来就没有移除`);
+
+    const when = nowIso();
+    run(db, 'UPDATE deliverable SET removed_at = NULL, updated_at = ? WHERE id = ?', when, deliverableId);
+
+    recordEvent(db, {
+      type: 'deliverable_restored',
+      itemId: deliverable.item_id,
+      stageId: deliverable.stage_id,
+      deliverableId,
+      occurredAt: when,
+      payload: { name: deliverable.name },
+    });
+  });
+}
+
+/** 还有哪些 sha256 被「在册」的交付物引用着（已移除的不算） */
+function liveShas(db: Db): Set<string> {
+  return new Set(
+    all<{ sha256: string }>(
+      db,
+      `SELECT DISTINCT v.sha256
+         FROM deliverable_version v
+         JOIN deliverable d ON d.id = v.deliverable_id
+        WHERE d.removed_at IS NULL`,
+    ).map((r) => r.sha256),
+  );
+}
+
+export interface StorageUsageResult {
+  totalFiles: number;
+  totalBytes: number;
+  recoverableFiles: number;
+  recoverableBytes: number;
+  removedDeliverables: number;
+}
+
+/** 磁盘上现在占了多少、其中多少是移除之后能收回来的 */
+export function storageUsage(db: Db, filesDir: string): StorageUsageResult {
+  const onDisk = listStoredFiles(filesDir);
+  const live = liveShas(db);
+
+  let recoverableFiles = 0;
+  let recoverableBytes = 0;
+  for (const file of onDisk) {
+    if (live.has(file.sha256)) continue;
+    recoverableFiles++;
+    recoverableBytes += file.bytes;
+  }
+
+  return {
+    totalFiles: onDisk.length,
+    totalBytes: onDisk.reduce((sum, f) => sum + f.bytes, 0),
+    recoverableFiles,
+    recoverableBytes,
+    removedDeliverables: count(
+      db,
+      'SELECT COUNT(*) AS n FROM deliverable WHERE removed_at IS NOT NULL',
+    ),
+  };
+}
+
+export interface PurgeOutcome {
+  deletedVersions: number;
+  deletedFiles: number;
+  freedBytes: number;
+  keptShared: number;
+}
+
+/**
+ * 回收磁盘：删掉没有任何**在册**交付物引用的字节。
+ *
+ * 顺序是刻意的 —— **先提交数据库，再删文件**：
+ *   - 反过来的话，数据库失败会留下一堆「记录还在、文件没了」的死链，点下载就 404
+ *   - 这个顺序最坏只会留下孤儿文件（没人引用但还占着地），下次回收顺手就清了
+ *
+ * 内容寻址在这里帮了大忙：同一份内容被多个交付物引用时，只要还有一个在册的，
+ * 字节就留着（`keptShared` 会告诉你保住了几个）。
+ */
+export function purgeFiles(db: Db, filesDir: string): PurgeOutcome {
+  const { deletedVersions, live } = transaction(db, () => {
+    // 已移除交付物的版本记录先删掉 —— 它们的字节引用随之失效
+    const doomed = all<{ id: number }>(
+      db,
+      `SELECT v.id FROM deliverable_version v
+         JOIN deliverable d ON d.id = v.deliverable_id
+        WHERE d.removed_at IS NOT NULL`,
+    );
+    for (const v of doomed) run(db, 'DELETE FROM deliverable_version WHERE id = ?', v.id);
+
+    // current_version_id 可能悬空了，收拾干净
+    run(
+      db,
+      `UPDATE deliverable SET current_version_id = NULL
+        WHERE current_version_id IS NOT NULL
+          AND current_version_id NOT IN (SELECT id FROM deliverable_version)`,
+    );
+
+    return { deletedVersions: doomed.length, live: liveShas(db) };
+  });
+
+  let deletedFiles = 0;
+  let freedBytes = 0;
+  let keptShared = 0;
+
+  for (const file of listStoredFiles(filesDir)) {
+    if (live.has(file.sha256)) {
+      keptShared++;
+      continue;
+    }
+    try {
+      fs.rmSync(file.abs, { force: true });
+      deletedFiles++;
+      freedBytes += file.bytes;
+    } catch {
+      // 删不掉（被占用之类）就先留着，下次回收再来
+    }
+  }
+
+  return { deletedVersions, deletedFiles, freedBytes, keptShared };
 }
 
 // ---------------------------------------------------------------------------
@@ -349,7 +530,7 @@ export function dropDeliverables(db: Db, input: DropInput): DropFileResult[] {
       const existing = one<DeliverableRow>(
         db,
         `SELECT * FROM deliverable
-          WHERE item_id = ? AND lower(trim(name)) = lower(trim(?))
+          WHERE item_id = ? AND lower(trim(name)) = lower(trim(?)) AND removed_at IS NULL
           ORDER BY id LIMIT 1`,
         input.itemId,
         name,
