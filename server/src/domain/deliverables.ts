@@ -290,46 +290,55 @@ export function renameDeliverable(db: Db, deliverableId: number, name: string): 
 // 合并成一步的话，误点一次就找不回来了；而分两步，200G 一样能收回来。
 // ---------------------------------------------------------------------------
 
-/** 移除一个交付物。软删除：行留着，「回收磁盘」时才真正动文件。 */
+/**
+ * 移除一个交付物。软删除：行留着，「回收磁盘」时才真正动文件。
+ *
+ * InTx 变体给批量用 —— 事务不支持嵌套（见 db/index.ts 的说明），
+ * 所以「公开函数自己开事务、*InTx 要求调用方已持有事务」这条区分是必须的。
+ */
+export function removeDeliverableInTx(db: Db, deliverableId: number, reason?: string): void {
+  const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+  if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+  if (deliverable.removed_at) throw new Error(`「${deliverable.name}」已经移除过了`);
+
+  const when = nowIso();
+  run(db, 'UPDATE deliverable SET removed_at = ?, updated_at = ? WHERE id = ?', when, when, deliverableId);
+
+  recordEvent(db, {
+    type: 'deliverable_removed',
+    itemId: deliverable.item_id,
+    stageId: deliverable.stage_id,
+    deliverableId,
+    occurredAt: when,
+    note: reason ?? null,
+    payload: { name: deliverable.name, category: deliverable.category, reason: reason ?? null },
+  });
+}
+
 export function removeDeliverable(db: Db, deliverableId: number, reason?: string): void {
-  transaction(db, () => {
-    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
-    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
-    if (deliverable.removed_at) throw new Error(`「${deliverable.name}」已经移除过了`);
+  transaction(db, () => removeDeliverableInTx(db, deliverableId, reason));
+}
 
-    const when = nowIso();
-    run(db, 'UPDATE deliverable SET removed_at = ?, updated_at = ? WHERE id = ?', when, when, deliverableId);
+export function restoreDeliverableInTx(db: Db, deliverableId: number): void {
+  const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
+  if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+  if (!deliverable.removed_at) throw new Error(`「${deliverable.name}」本来就没有移除`);
 
-    recordEvent(db, {
-      type: 'deliverable_removed',
-      itemId: deliverable.item_id,
-      stageId: deliverable.stage_id,
-      deliverableId,
-      occurredAt: when,
-      note: reason ?? null,
-      payload: { name: deliverable.name, category: deliverable.category, reason: reason ?? null },
-    });
+  const when = nowIso();
+  run(db, 'UPDATE deliverable SET removed_at = NULL, updated_at = ? WHERE id = ?', when, deliverableId);
+
+  recordEvent(db, {
+    type: 'deliverable_restored',
+    itemId: deliverable.item_id,
+    stageId: deliverable.stage_id,
+    deliverableId,
+    occurredAt: when,
+    payload: { name: deliverable.name },
   });
 }
 
 export function restoreDeliverable(db: Db, deliverableId: number): void {
-  transaction(db, () => {
-    const deliverable = one<DeliverableRow>(db, 'SELECT * FROM deliverable WHERE id = ?', deliverableId);
-    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
-    if (!deliverable.removed_at) throw new Error(`「${deliverable.name}」本来就没有移除`);
-
-    const when = nowIso();
-    run(db, 'UPDATE deliverable SET removed_at = NULL, updated_at = ? WHERE id = ?', when, deliverableId);
-
-    recordEvent(db, {
-      type: 'deliverable_restored',
-      itemId: deliverable.item_id,
-      stageId: deliverable.stage_id,
-      deliverableId,
-      occurredAt: when,
-      payload: { name: deliverable.name },
-    });
-  });
+  transaction(db, () => restoreDeliverableInTx(db, deliverableId));
 }
 
 /** 还有哪些 sha256 被「在册」的交付物引用着（已移除的不算） */

@@ -233,30 +233,36 @@ export function deleteFolder(db: Db, folderId: number): void {
   });
 }
 
-/** 把交付物归到某个文件夹（null = 根目录）。只改归置，不碰阶段。 */
+/**
+ * 把交付物归到某个文件夹（null = 根目录）。只改归置，不碰阶段。
+ *
+ * InTx 变体给批量用 —— 事务不支持嵌套（见 db/index.ts 的说明）。
+ */
+export function moveDeliverableInTx(db: Db, deliverableId: number, folderId: number | null): void {
+  const deliverable = one<{ id: number; item_id: number }>(
+    db,
+    'SELECT id, item_id FROM deliverable WHERE id = ?',
+    deliverableId,
+  );
+  if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
+
+  if (folderId !== null) {
+    const folder = getFolder(db, folderId);
+    if (!folder) throw new Error(`文件夹不存在: ${folderId}`);
+    if (folder.item_id !== deliverable.item_id) throw new Error('不能把交付物移到别的需求的文件夹里');
+  }
+
+  run(
+    db,
+    'UPDATE deliverable SET folder_id = ?, updated_at = ? WHERE id = ?',
+    folderId,
+    nowIso(),
+    deliverableId,
+  );
+}
+
 export function moveDeliverable(db: Db, deliverableId: number, folderId: number | null): void {
-  transaction(db, () => {
-    const deliverable = one<{ id: number; item_id: number }>(
-      db,
-      'SELECT id, item_id FROM deliverable WHERE id = ?',
-      deliverableId,
-    );
-    if (!deliverable) throw new Error(`交付物不存在: ${deliverableId}`);
-
-    if (folderId !== null) {
-      const folder = getFolder(db, folderId);
-      if (!folder) throw new Error(`文件夹不存在: ${folderId}`);
-      if (folder.item_id !== deliverable.item_id) throw new Error('不能把交付物移到别的需求的文件夹里');
-    }
-
-    run(
-      db,
-      'UPDATE deliverable SET folder_id = ?, updated_at = ? WHERE id = ?',
-      folderId,
-      nowIso(),
-      deliverableId,
-    );
-  });
+  transaction(db, () => moveDeliverableInTx(db, deliverableId, folderId));
 }
 
 /** 交付物 + 它所在的文件夹名，用来在阶段视图里显示「在 assets/」 */

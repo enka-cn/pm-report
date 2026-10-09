@@ -60,6 +60,7 @@ import {
   updateFolder,
 } from './domain/folders.ts';
 import { addLink, listLinks, removeLink, updateLink } from './domain/links.ts';
+import { batchDeliverables } from './domain/batch.ts';
 import { absolutePathOf, relPathOf, storeFile } from './domain/storage.ts';
 import { meta } from './domain/labels.ts';
 import { executePalette, helpText, queryPalette } from './domain/palette.ts';
@@ -101,6 +102,15 @@ function asNumber(v: unknown, field: string, required = true): number | undefine
     if (required) throw new Error(`缺少参数 ${field}`);
     return undefined;
   }
+
+  // 只收「本来就是数字」和「数字字符串」。
+  // 不能直接 Number(v)：`Number([])` 是 0、`Number([5])` 是 5、`Number(true)` 是 1 ——
+  // 传个数组进来会变成一个看起来合法但完全无关的 id，然后报出跟原因毫不相干的错
+  // （比如 folderId: [] 会变成「文件夹不存在: 0」）。
+  if (typeof v !== 'number' && typeof v !== 'string') {
+    throw new Error(`参数 ${field} 必须是数字`);
+  }
+
   const n = Number(v);
   if (!Number.isFinite(n)) throw new Error(`参数 ${field} 必须是数字`);
   return n;
@@ -797,6 +807,34 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   app.post('/api/deliverables/:id/restore', (c) => {
     restoreDeliverable(db, asNumber(c.req.param('id'), 'id')!);
     return c.json({ ok: true });
+  });
+
+  /**
+   * 批量操作：勾一堆一次处理掉。
+   *
+   * 整个批次一个事务，要么全成要么全不成 —— 半截生效比失败更让人困惑。
+   */
+  app.post('/api/deliverables/batch', async (c) => {
+    const body = await readJson(c);
+    const ids = body['ids'];
+    if (!Array.isArray(ids)) throw new Error('缺少 ids（应为数组）');
+
+    const action = asString(body['action'], 'action');
+    if (action !== 'move' && action !== 'remove' && action !== 'restore') {
+      throw new Error(`action 只能是 move / remove / restore，收到「${String(action)}」`);
+    }
+
+    return c.json(
+      batchDeliverables(db, {
+        ids: ids.map((v) => asNumber(v, 'id')!),
+        action,
+        folderId:
+          body['folderId'] === undefined
+            ? undefined
+            : (asNumber(body['folderId'], 'folderId', false) ?? null),
+        reason: asString(body['reason'], 'reason', false),
+      }),
+    );
   });
 
   app.get('/api/storage', (c) => c.json(storageUsage(db, filesDir)));

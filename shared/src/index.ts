@@ -588,6 +588,18 @@ export interface PurgeResult {
   keptShared: number;
 }
 
+/** 批量操作。勾一堆东西一次处理掉，比如「把整个文件夹的内容移到上一级」。 */
+export type BatchAction = 'move' | 'remove' | 'restore';
+
+export interface BatchResult {
+  /** 真正改动的条数 */
+  changed: number;
+  /** 请求里带了、但已经是目标状态的（幂等，不算失败） */
+  unchanged: number;
+  /** 找不到的 id。有值就说明界面上的数据和库不一致，值得看一眼 */
+  missing: number[];
+}
+
 export interface MetaLabels {  roles: Record<Role, string>;
   conditions: Record<ItemCondition, string>;
   stageKinds: Record<StageKind, string>;

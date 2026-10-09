@@ -26,6 +26,18 @@
 2. **已应用的迁移文件不可修改。**
    迁移运行器会校验 checksum 并在不匹配时报错。改 schema 请新增 `00N_xxx.sql`。
 
+## 事务不支持嵌套，所以有 `*InTx`
+
+`transaction()` 是扁平的 `BEGIN IMMEDIATE`（见 `db/index.ts`），**嵌套会静默失效，所以干脆不支持**。
+约定是：**公开函数自己开事务；带 `*InTx` 后缀的内部函数要求调用方已经持有事务。**
+
+批量操作（`domain/batch.ts`）同时要用 deliverables 和 folders，所以它自己开一个事务，
+在里面调 `removeDeliverableInTx` / `restoreDeliverableInTx` / `moveDeliverableInTx`。
+放在独立模块是为了避免那两个文件互相 import 成环。
+
+加新写入函数时按这个模式来：先写 `xxxInTx`，再包一层开事务的 `xxx`。
+`tests/batch.test.ts` 里有一条专门验证「跨需求的批量移动会整批回滚」。
+
 ## 前端有个 tsc 查不出的坑
 
 **不要把 hook 放在 `if (...) return` 后面。**
@@ -128,6 +140,7 @@ pnpm start
 | POST | `/api/deliverables/:id/restore` | 从「已移除」恢复 |
 | GET | `/api/storage` | 磁盘占用与可回收量 |
 | POST | `/api/storage/purge` | 回收磁盘（删掉无引用的字节） |
+| POST | `/api/deliverables/batch` | 批量 `move` / `remove` / `restore`（一个事务，全成或全不成） |
 
 ## 为什么「移除」和「回收」是两步
 

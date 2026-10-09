@@ -1,5 +1,7 @@
 import type {
   AdvanceStageResult,
+  BatchAction,
+  BatchResult,
   BlockerDirection,
   BlockerSeverity,
   CloseReason,
@@ -260,6 +262,21 @@ export const api = {
 
   /** 回收磁盘：删掉没有任何在册交付物引用的字节 */
   purgeFiles: () => request<PurgeResult>('/api/storage/purge', { method: 'POST' }),
+
+  /**
+   * 批量操作。整个批次在服务端是一个事务 —— 要么全成要么全不成。
+   * 半截生效比失败更让人困惑：你以为都成功了，实际只动了一半。
+   */
+  batchDeliverables: (body: {
+    ids: number[];
+    action: BatchAction;
+    folderId?: number | null;
+    reason?: string;
+  }) =>
+    request<BatchResult>('/api/deliverables/batch', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 
   // ---- 需求链接 ----------------------------------------------------------
 

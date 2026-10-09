@@ -31,8 +31,12 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
   const [renamingFile, setRenamingFile] = useState<number | null>(null);
   const [hover, setHover] = useState<Target | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
+  /** 勾选了哪些交付物。批量操作就是围绕它转的 */
+  const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
 
   const total = countFiles(detail.tree);
+  const allIds = idsIn(detail.tree);
+  const everySelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
 
   function toggle(id: number): void {
     setCollapsed((prev) => {
@@ -41,6 +45,35 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
       else next.add(id);
       return next;
     });
+  }
+
+  /** 勾选/取消勾选一组（单条、整个文件夹、或全部） */
+  function toggleSelection(ids: number[], on: boolean): void {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (on) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  async function runBatch(
+    action: 'move' | 'remove' | 'restore',
+    okText: (r: { changed: number; unchanged: number; missing: number[] }) => string,
+    extra: { folderId?: number | null; reason?: string } = {},
+  ): Promise<void> {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    try {
+      const r = await api.batchDeliverables({ ids, action, ...extra });
+      setSelected(new Set());
+      await act(async () => undefined);
+      notice.ok(okText(r));
+    } catch (err) {
+      notice.fail(messageOf(err));
+    }
   }
 
   async function run<T>(fn: () => Promise<T>, ok: string): Promise<void> {
@@ -105,6 +138,14 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
               style={{ paddingLeft: depth * 16 + 6 }}
             >
               <span className="text-zinc-600">·</span>
+
+              <input
+                type="checkbox"
+                checked={selected.has(d.id)}
+                onChange={(e) => toggleSelection([d.id], e.target.checked)}
+                title="勾选后可以批量移到别的文件夹、或一次移除"
+                className="shrink-0"
+              />
 
               {renamingFile === d.id ? (
                 <InlineInput
@@ -217,14 +258,33 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
               }}
             />
           ) : (
-            <button
-              type="button"
-              onDoubleClick={() => setRenamingFolder(folder.id)}
-              title="双击改名"
-              className="text-sm text-zinc-200"
-            >
-              {folder.name}
-            </button>
+            <>
+              <input
+                type="checkbox"
+                checked={inside > 0 && idsIn(node).every((id) => selected.has(id))}
+                ref={(el) => {
+                  // 部分选中：浏览器没有这个视觉状态，只能手动设 indeterminate
+                  if (el) {
+                    const ids = idsIn(node);
+                    el.indeterminate =
+                      ids.some((id) => selected.has(id)) &&
+                      !ids.every((id) => selected.has(id));
+                  }
+                }}
+                onChange={(e) => toggleSelection(idsIn(node), e.target.checked)}
+                disabled={inside === 0}
+                title={inside === 0 ? '这个文件夹是空的' : '全选/全不选这个文件夹里的内容（含子文件夹）'}
+                className="shrink-0"
+              />
+              <button
+                type="button"
+                onDoubleClick={() => setRenamingFolder(folder.id)}
+                title="双击改名"
+                className="text-sm text-zinc-200"
+              >
+                {folder.name}
+              </button>
+            </>
           )}
 
           <span className="text-[10px] text-zinc-600">{inside} 个</span>
@@ -290,10 +350,67 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
         <span className="text-[11px] text-zinc-500">
           共 {total} 个 · 按文件夹归置，和阶段互不影响 · 拖动文件行可以换文件夹
         </span>
-        <button className={`${btnGhost} ml-auto`} onClick={() => setCreatingIn('root')}>
+        <button
+          className={`${btnGhost} ml-auto`}
+          disabled={total === 0}
+          onClick={() => toggleSelection(allIds, !everySelected)}
+        >
+          {everySelected ? '取消选择' : '全选'}
+        </button>
+        <button className={btnGhost} onClick={() => setCreatingIn('root')}>
           ＋ 新建文件夹
         </button>
       </header>
+
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-sky-900/50 bg-sky-950/40 px-3 py-1.5 text-xs">
+          <span className="text-sky-200">已选 {selected.size} 个</span>
+
+          <select
+            value=""
+            onChange={(e) => {
+              const value = e.target.value;
+              if (value === '') return;
+              const folderId = value === 'root' ? null : Number(value);
+              const where =
+                folderId === null
+                  ? '根目录'
+                  : `「${folderOptions(detail.tree).find((o) => o.id === folderId)?.label ?? ''}」`;
+              void runBatch('move', (r) => `已把 ${r.changed} 个移到${where}`, { folderId });
+            }}
+            className={`${inputCls} py-0.5 text-xs`}
+          >
+            <option value="">移到…</option>
+            <option value="root">根目录</option>
+            {folderOptions(detail.tree).map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          <button
+            className={btnGhost}
+            onClick={() => {
+              const count = selected.size;
+              const reason = window.prompt(
+                `移除选中的 ${count} 个交付物？\n\n` +
+                  `它们只是从各处消失，磁盘上的文件还在 —— 真正回收空间要点面板底部的「回收磁盘」，` +
+                  `在那之前都可以在「已移除」里恢复。\n\n（可以写个原因，会记进事件日志）`,
+                '',
+              );
+              if (reason === null) return;
+              void runBatch('remove', (r) => `已移除 ${r.changed} 个`, { reason });
+            }}
+          >
+            移除
+          </button>
+
+          <button className={btnGhost} onClick={() => setSelected(new Set())}>
+            取消选择
+          </button>
+        </div>
+      )}
 
       <div className="px-2 py-2">
         {creatingIn === 'root' && (
@@ -438,6 +555,23 @@ function StorageFooter() {
 
 function countFiles(node: FolderNode): number {
   return node.files.length + node.children.reduce((sum, child) => sum + countFiles(child), 0);
+}
+
+/** 这个节点（含子文件夹）里所有交付物的 id —— 文件夹的勾选框和批量操作都靠它 */
+function idsIn(node: FolderNode): number[] {
+  return [...node.files.map((f) => f.id), ...node.children.flatMap((child) => idsIn(child))];
+}
+
+/** 文件夹下拉选项，带完整路径 —— 不然嵌套里的两个同名文件夹分不清 */
+function folderOptions(node: FolderNode, prefix = ''): { id: number; label: string }[] {
+  const out: { id: number; label: string }[] = [];
+  for (const child of node.children) {
+    const name = child.folder!.name;
+    const label = prefix ? `${prefix} / ${name}` : name;
+    out.push({ id: child.folder!.id, label });
+    out.push(...folderOptions(child, label));
+  }
+  return out;
 }
 
 function InlineInput({
