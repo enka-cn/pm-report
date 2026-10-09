@@ -19,6 +19,7 @@ import type {
   MetaResponse,
   PaletteExecuteResult,
   PaletteQueryResult,
+  PipelineTemplate,
   ProjectDetail,
   ProjectKind,
   ProjectRow,
@@ -95,6 +96,9 @@ export const api = {
     ),
 
   item: (id: number) => request<ItemDetail>(`/api/items/${id}`),
+
+  /** 已加载的流水线模板。新建需求时照着选，避免选到没有模板的角色 */
+  pipelines: () => request<{ pipelines: PipelineTemplate[] }>('/api/pipelines'),
 
   createItem: (body: {
     title: string;

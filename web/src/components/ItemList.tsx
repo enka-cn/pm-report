@@ -133,25 +133,39 @@ export function NewItemForm({
   const notice = useNotice();
   const queryClient = useQueryClient();
 
+  // 让用户选**流水线**而不是选角色。
+  // 之前这里列的是 meta.roles（写死的枚举），于是「测试」「维护」也在下拉里 ——
+  // 但它们没有对应的流水线模板，选中点创建必然报「角色 X 没有对应的流水线模板」。
+  // 现在列的是真实加载到的模板，选什么都不可能失败；以后一个角色有多条流水线也能选。
+  const templates = useQuery({ queryKey: ['pipelines'], queryFn: api.pipelines });
+  const pipelines = templates.data?.pipelines ?? [];
+
   const [title, setTitle] = useState('');
-  const [role, setRole] = useState<Role>('dev');
+  const [pipelineKey, setPipelineKey] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [criticality, setCriticality] = useState(3);
   const [busy, setBusy] = useState(false);
 
+  // 模板是异步来的，到了之后默认选第一条
+  const chosen = pipelines.find((p) => p.key === pipelineKey) ?? pipelines[0];
+
   async function submit(e: FormEvent): Promise<void> {
     e.preventDefault();
+    if (!chosen) return;
     setBusy(true);
     try {
       const created = await api.createItem({
         title,
-        role,
+        role: chosen.role,
+        pipelineKey: chosen.key,
         dueAt: dueAt || null,
         criticality,
         projectId: projectId ?? null,
       });
       await queryClient.invalidateQueries();
-      notice.ok(`已创建 ${created.item.code}，按「${meta.data?.roles[role] ?? role}」流水线生成了 ${created.stages.length} 个阶段`);
+      notice.ok(
+        `已创建 ${created.item.code}，按「${chosen.name}」生成了 ${created.stages.length} 个阶段`,
+      );
       onDone();
       navigate({ name: 'item', id: created.item.id, stageId: null });
     } catch (err) {
@@ -177,19 +191,25 @@ export function NewItemForm({
         />
       </Field>
 
-      <Field label="我的角色">
+      <Field label="流水线">
         <select
-          value={role}
-          onChange={(e) => setRole(e.target.value as Role)}
+          value={chosen?.key ?? ''}
+          onChange={(e) => setPipelineKey(e.target.value)}
+          disabled={pipelines.length === 0}
           className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
         >
-          {Object.entries(meta.data?.roles ?? {}).map(([k, v]) => (
-            <option key={k} value={k}>
-              {v}
+          {pipelines.map((p) => (
+            <option key={p.key} value={p.key}>
+              {p.name}（{meta.data?.roles[p.role] ?? p.role}）
             </option>
           ))}
         </select>
       </Field>
+      {chosen && (
+        <p className="w-full text-[11px] text-zinc-500">
+          {chosen.stages.map((s) => s.name).join(' → ')}
+        </p>
+      )}
 
       <Field label="整体 DDL">
         <input
