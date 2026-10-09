@@ -13,8 +13,26 @@ export interface MigrationRecord {
 
 export const MIGRATIONS_DIR = path.join(import.meta.dirname, 'migrations');
 
+/**
+ * 迁移文件的校验和。
+ *
+ * **先把行尾统一成 LF 再算。**
+ *
+ * 不归一化的话，同一个提交在不同机器上会算出不同的校验和：Windows 上 `core.autocrlf`
+ * 会把 `.sql` 检出成 CRLF，Linux/macOS 是 LF。后果是「在我机器上跑过一次的库，换台机器
+ * 或换个 git 配置就报『迁移被改过』」—— 而那句报错完全指不到真正的原因（行尾）。
+ *
+ * 归一化还有个日常好处：用编辑器打开迁移文件另存一次（行尾被改），不会平白无故
+ * 弄坏一个已经应用过的库。
+ *
+ * 这个坑是被自己踩出来的：一次用 PowerShell 改文件（写回 CRLF）之后，
+ * 服务直接起不来了。
+ */
 function sha256(text: string): string {
-  return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
+  return crypto
+    .createHash('sha256')
+    .update(text.replace(/\r\n/g, '\n'), 'utf8')
+    .digest('hex');
 }
 
 /**

@@ -1,5 +1,10 @@
-# 换行符统一交给 git 管：仓库里存 LF，检出时按平台转换
-* text=auto
+# 换行符统一交给 git 管：仓库里存 LF，检出也用 LF。
+#
+# 为什么写 `eol=lf` 而不只是 `text=auto`：这个项目里有一处**对行尾敏感**的东西 ——
+# 迁移文件的校验和（sha256() 已经把行尾归一化了，见 migrate.ts，所以那只影响整洁度）。
+# 只写 text=auto 的话，Windows 上工作区会检出成 CRLF，于是每次提交都刷一屏
+# "LF will be replaced by CRLF" 警告，diff 偶尔还会显示成整文件改动。
+* text=auto eol=lf
 
 # Windows 脚本保持 CRLF（老版本 PowerShell 对纯 LF 的 .ps1 偶尔会报错）
 *.ps1 text eol=crlf
@@ -7,7 +12,11 @@
 # 二进制，别做任何转换
 *.png binary
 *.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
 *.ico binary
 *.db binary
 *.sqlite binary
+*.woff binary
 *.woff2 binary

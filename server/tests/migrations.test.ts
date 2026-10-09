@@ -141,3 +141,33 @@ test('迁移：记录 checksum，重复跑是空操作', () => {
   db.close();
   fs.rmSync(work, { recursive: true, force: true });
 });
+
+test('迁移校验和对行尾不敏感 —— 但内容真改了还是要报', () => {
+  // 这个坑是在 Windows 上踩出来的：用 PowerShell 改了一下迁移文件（写回 CRLF），
+  // 服务立刻起不来，报「迁移在应用后被修改过」—— 而文件内容一个字都没改。
+  // 同一个提交在 Linux 上检出是 LF、Windows 上是 CRLF，校验和不能因此不同。
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'manager-eol-'));
+  const dir = path.join(work, 'mig');
+  fs.mkdirSync(dir);
+
+  const file = path.join(dir, '001_x.sql');
+  const lf = 'CREATE TABLE t (id INTEGER PRIMARY KEY);\n-- 一条注释\n';
+  fs.writeFileSync(file, lf, 'utf8');
+
+  const db = openDb(path.join(work, 'm.db'));
+  migrate(db, dir);
+
+  // 模拟 Windows 上 core.autocrlf 把它检出成 CRLF
+  fs.writeFileSync(file, lf.replace(/\n/g, '\r\n'), 'utf8');
+  assert.doesNotThrow(
+    () => migrate(db, dir),
+    '只是行尾从 LF 变成 CRLF，不该报「应用后被修改过」',
+  );
+
+  // 反过来也不能放松：内容真改了必须拦住
+  fs.writeFileSync(file, `${lf}-- 真的改了内容\n`, 'utf8');
+  assert.throws(() => migrate(db, dir), /checksum 不匹配/);
+
+  db.close();
+  fs.rmSync(work, { recursive: true, force: true });
+});
