@@ -7,7 +7,7 @@ import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { ConditionBadge, ProjectKindBadge } from './Badges';
 import { NewItemForm } from './ItemList';
-import { Field, Hint, Panel, btnGhost, btnPrimary, inputCls } from './ui';
+import { Field, Hint, InlineCode, Panel, btnGhost, btnPrimary, inputCls } from './ui';
 
 export function ProjectDetail({ projectId }: { projectId: number }) {
   const queryClient = useQueryClient();
@@ -49,33 +49,14 @@ export function ProjectDetail({ projectId }: { projectId: number }) {
         >
           ← 项目
         </button>
-        {/* 编号可以没有：看护/预研类项目本来就没有单号 */}
-        <button
-          type="button"
-          onClick={() => {
-            const next = window.prompt(
-              p.code
-                ? `改项目编号（现在是「${p.code}」）。\n\n留空就是取消编号。`
-                : '给这个项目补一个编号。\n\n看护/预研类项目本来就没有单号，留空就好。',
-              p.code ?? '',
-            );
-            if (next === null) return;
-            const clean = next.trim();
-            if (clean === (p.code ?? '')) return;
-            void act(
-              () => api.setProjectCode(p.id, clean || null),
-              clean ? `项目编号已设为「${clean}」` : '已取消项目编号',
-            );
+        {/* 编号可以没有：看护/预研类项目本来就没有单号。点一下就地改 */}
+        <InlineCode
+          code={p.code}
+          onSave={async (next) => {
+            await api.setProjectCode(p.id, next);
+            await queryClient.invalidateQueries();
           }}
-          title={p.code ? `编号「${p.code}」，点击修改` : '还没有编号'}
-          className={
-            p.code
-              ? 'font-mono text-sm text-zinc-500 hover:text-zinc-300'
-              : 'rounded border border-dashed border-zinc-700 px-1.5 text-[11px] text-zinc-600 hover:border-zinc-500 hover:text-zinc-400'
-          }
-        >
-          {p.code ?? '＋ 编号'}
-        </button>
+        />
         <h1 className="text-base text-zinc-100">{p.name}</h1>
         <ProjectKindBadge kind={p.kind} />
         {p.archived_at && <span className="text-xs text-zinc-500">已归档</span>}

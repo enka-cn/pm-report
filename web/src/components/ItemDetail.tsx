@@ -16,7 +16,17 @@ import { summarizeDrop, useFileDrop } from '../lib/drop';
 import { ConditionBadge, RoleBadge, StageKindLabel } from './Badges';
 import { ItemFileTree } from './ItemFileTree';
 import { ItemLinks } from './ItemLinks';
-import { Field, Hint, Panel, PromptRow, btnDanger, btnGhost, btnPrimary, inputCls } from './ui';
+import {
+  Field,
+  Hint,
+  InlineCode,
+  Panel,
+  PromptRow,
+  btnDanger,
+  btnGhost,
+  btnPrimary,
+  inputCls,
+} from './ui';
 
 export function ItemDetail({ id, stageId }: { id: number; stageId: number | null }) {
   const queryClient = useQueryClient();
@@ -38,33 +48,6 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
   }
 
   const detail = q.data;
-
-  /**
-   * 补 / 改编号。
-   *
-   * 用 prompt 而不是做个小表单：改编号是低频动作，而它需要说清「留空 = 没有编号」
-   * 这件事 —— 一句话讲不完就会有人以为必须填。
-   */
-  async function changeCode(): Promise<void> {
-    if (!detail) return;
-    const next = window.prompt(
-      detail.item.code
-        ? `改编号（现在是「${detail.item.code}」）。\n\n留空就是取消编号。`
-        : '给这条需求补一个编号。\n\n' +
-            '留空就是没有编号 —— 预研/算法项目本来就没有单号，不用硬编一个。\n' +
-            '预研后来立了项、拿到真单号时，再回来补上也来得及。',
-      detail.item.code ?? '',
-    );
-    if (next === null) return;
-
-    const clean = next.trim();
-    if (clean === (detail.item.code ?? '')) return;
-
-    await act(
-      () => api.setItemCode(detail.item.id, clean || null),
-      () => (clean ? `编号已设为「${clean}」` : '已取消编号'),
-    );
-  }
 
   // 拖放。**必须在上面那几个提前 return 之前调用** —— hook 的数量每次渲染必须一致，
   // 放在 `if (!detail) return` 后面就会变成「加载中那次不调用、加载完调用」，
@@ -156,23 +139,14 @@ export function ItemDetail({ id, stageId }: { id: number; stageId: number | null
         >
           ← 驾驶舱
         </button>
-        {/* 编号可以没有；有就点得动 —— 预研转立项时补上真单号就靠这儿 */}
-        <button
-          type="button"
-          onClick={() => void changeCode()}
-          title={
-            item.code
-              ? `编号「${item.code}」，点击修改`
-              : '还没有编号。预研/算法项目本来就没有单号，不用硬编一个'
-          }
-          className={
-            item.code
-              ? 'font-mono text-sm text-zinc-500 hover:text-zinc-300'
-              : 'rounded border border-dashed border-zinc-700 px-1.5 text-[11px] text-zinc-600 hover:border-zinc-500 hover:text-zinc-400'
-          }
-        >
-          {item.code ?? '＋ 编号'}
-        </button>
+        {/* 编号可以没有；点一下就地改 —— 预研转立项时补上真单号就靠这儿 */}
+        <InlineCode
+          code={item.code}
+          onSave={async (next) => {
+            await api.setItemCode(item.id, next);
+            await queryClient.invalidateQueries();
+          }}
+        />
         <h1 className="text-base text-zinc-100">{item.title}</h1>
         <RoleBadge role={item.role} />
         <ConditionBadge condition={item.condition} />
