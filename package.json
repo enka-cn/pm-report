@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=24"
+    "node": ">=24.16.0"
   },
   "scripts": {
     "migrate": "node server/src/db/migrate.ts",

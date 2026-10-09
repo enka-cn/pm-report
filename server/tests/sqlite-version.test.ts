@@ -59,7 +59,8 @@ test('太旧时报的是一句人话，而不是 near "ALTER": syntax error', ()
   assert.match(err.message, /SQLite 版本太低：当前 3\.50\.4/);
   assert.match(err.message, /需要 3\.53\.0 以上/);
   assert.match(err.message, /ALTER TABLE \.\.\. ALTER COLUMN/, '要说清是哪个能力不够');
-  assert.match(err.message, /升级 Node 是唯一的办法/, '要给得出下一步');
+  assert.match(err.message, /换成 Node 24\.16 以上/, '要给得出能照做的一步');
+  assert.match(err.message, /24\.16\.0 之前的 24\.x 也不够/, '要说清「Node 24」本身不保证够');
   assert.match(err.message, /Node 22\.22 → 3\.50\.4/, '要把「Node 版本 ≠ SQLite 版本」讲明白');
 });
 
