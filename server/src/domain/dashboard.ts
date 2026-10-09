@@ -376,6 +376,7 @@ function makeCard(f: Facts, metric: number, reason: string, today: string): Scor
   return {
     itemId: f.item.id,
     code: f.item.code,
+    ref: f.item.ref,
     title: f.item.title,
     role: f.item.role,
     condition: f.item.condition,
@@ -461,7 +462,12 @@ function buildGantt(facts: Facts[], today: string): GanttChart {
   const withDdl = facts.filter((f): f is Facts & { nextDdl: string } => f.nextDdl !== null);
   const withoutDdl = facts
     .filter((f) => f.nextDdl === null)
-    .map((f) => ({ itemId: f.item.id, code: f.item.code, title: f.item.title }));
+    .map((f) => ({
+      itemId: f.item.id,
+      code: f.item.code,
+      ref: f.item.ref,
+      title: f.item.title,
+    }));
 
   const lookbackFloor = shiftDays(today, -HARD_LOOKBACK_DAYS);
   const lookaheadCap = shiftDays(today, HARD_LOOKAHEAD_DAYS);
@@ -494,6 +500,7 @@ function buildGantt(facts: Facts[], today: string): GanttChart {
     return {
       itemId: f.item.id,
       code: f.item.code,
+      ref: f.item.ref,
       title: f.item.title,
       role: f.item.role,
       condition: f.item.condition,

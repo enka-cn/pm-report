@@ -7,7 +7,7 @@ import { addTodo, openBlocker, closeBlocker } from '../src/domain/stages.ts';
 import { addDeliverable } from '../src/domain/deliverables.ts';
 import { createProject, handoffProject } from '../src/domain/projects.ts';
 import { rebuildSearchIndex, search } from '../src/domain/search.ts';
-import { freshDb } from './helpers.ts';
+import { freshDb , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -38,7 +38,7 @@ const indexed = (db: ReturnType<typeof freshDb>): number =>
 
 test('需求：标题和说明都进索引', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '接口鉴权改造',
     role: 'dev',
     description: '把老的单点登录换成统一鉴权',
@@ -54,10 +54,10 @@ test('需求：标题和说明都进索引', () => {
 
 test('备注：只有带 note 的事件进索引', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   // 建需求本身会写好几条事件，但都没有 note，所以一条都不该进索引
-  assert.equal(search(db, item.item.code).counts.note, 0, '没有 note 的事件不该进索引');
+  assert.equal(search(db, '甲').counts.note, 0, '没有 note 的事件不该进索引');
 
   noteItem(db, item.item.id, '送测材料已提交，等测试组排期');
   assert.equal(search(db, '排期').counts.note, 1);
@@ -69,7 +69,7 @@ test('备注：只有带 note 的事件进索引', () => {
 
 test('待办：手工的进索引，模板的不进', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   // 模板待办已经随第一个阶段实例化了，它们全是样板文字
   const templateTodos = all<{ text: string }>(db, 'SELECT text FROM todo WHERE source = ?', 'template');
@@ -90,7 +90,7 @@ test('待办：手工的进索引，模板的不进', () => {
 
 test('待办：改了文本旧词消失，删了整条消失', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const t = addTodo(db, { itemId: item.item.id, stageId: item.stages[0]!.id, text: '补写时序图' });
 
   run(db, 'UPDATE todo SET text = ? WHERE id = ?', '补写异常分支', t.id);
@@ -105,7 +105,7 @@ test('待办：改了文本旧词消失，删了整条消失', () => {
 
 test('模板待办被改成手工时也要进索引', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const first = all<{ id: number }>(db, 'SELECT id FROM todo WHERE source = ? LIMIT 1', 'template')[0]!;
   assert.equal(search(db, '理解需求并复述').total, 0);
 
@@ -117,7 +117,7 @@ test('模板待办被改成手工时也要进索引', () => {
 
 test('阻塞：对方、需要什么、怎么解的都要能搜到', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const blockerId = openBlocker(db, {
     itemId: item.item.id,
     direction: 'blocked_by_others',
@@ -136,7 +136,7 @@ test('阻塞：对方、需要什么、怎么解的都要能搜到', () => {
 
 test('交付物：名称进索引', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const d = addDeliverable(db, {
     itemId: item.item.id,
     stageId: item.stages[0]!.id,
@@ -153,7 +153,7 @@ test('交付物：名称进索引', () => {
 
 test('项目：说明和看护条件进索引；默认项目不进', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   assert.equal(item.project.is_default, 1);
 
   // 默认项目对用户是隐形的，不该在结果里冒出来
@@ -177,7 +177,7 @@ test('项目：说明和看护条件进索引；默认项目不进', () => {
 
 test('改需求标题后旧词消失（索引不能留下幽灵）', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
 
   run(db, 'UPDATE item SET title = ?, updated_at = ? WHERE id = ?', '接口限流改造', '2026-01-01T00:00:00Z', item.item.id);
 
@@ -189,7 +189,7 @@ test('改需求标题后旧词消失（索引不能留下幽灵）', () => {
 
 test('作废的事件要从索引里抽掉', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   noteItem(db, item.item.id, '这条记录写错了，一会儿作废');
 
   assert.equal(search(db, '一会儿作废').total, 1);
@@ -211,8 +211,8 @@ test('作废的事件要从索引里抽掉', () => {
 
 test('LIKE 通配符必须转义，否则搜出来的东西跟打的字没关系', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '完成率统计', role: 'dev', description: '当前完成率 50% 左右' });
-  createItem(db, TEMPLATES, { title: '五十件事', role: 'dev', description: '跟百分号无关' });
+  const a = makeItem(db, TEMPLATES, { title: '完成率统计', role: 'dev', description: '当前完成率 50% 左右' });
+  makeItem(db, TEMPLATES, { title: '五十件事', role: 'dev', description: '跟百分号无关' });
   noteItem(db, a.item.id, 'a_b 这种下划线也要能搜');
 
   assert.equal(search(db, '50%').total, 1, '「50%」不能变成「以 50 开头的一切」');
@@ -226,7 +226,7 @@ test('LIKE 通配符必须转义，否则搜出来的东西跟打的字没关系
 
 test('大小写不敏感', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: 'ABC 需求', role: 'dev', description: 'MixedCase Needle' });
+  makeItem(db, TEMPLATES, { title: 'ABC 需求', role: 'dev', description: 'MixedCase Needle' });
 
   assert.equal(search(db, 'needle').total, 1);
   assert.equal(search(db, 'NEEDLE').total, 1);
@@ -237,8 +237,8 @@ test('大小写不敏感', () => {
 
 test('标题命中排在正文命中前面', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '别的东西', role: 'dev', description: '正文里提到了鉴权' });
-  const byTitle = createItem(db, TEMPLATES, { title: '鉴权平台化', role: 'dev' });
+  makeItem(db, TEMPLATES, { title: '别的东西', role: 'dev', description: '正文里提到了鉴权' });
+  const byTitle = makeItem(db, TEMPLATES, { title: '鉴权平台化', role: 'dev' });
 
   const r = search(db, '鉴权');
   assert.equal(r.hits[0]!.refId, byTitle.item.id, '标题命中的排最前');
@@ -250,7 +250,7 @@ test('标题命中排在正文命中前面', () => {
 
 test('按类别过滤与计数', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '鉴权改造', role: 'dev', description: '鉴权相关说明' });
+  const item = makeItem(db, TEMPLATES, { title: '鉴权改造', role: 'dev', description: '鉴权相关说明' });
   noteItem(db, item.item.id, '鉴权这块还有点疑问');
 
   const all1 = search(db, '鉴权');
@@ -269,7 +269,7 @@ test('按类别过滤与计数', () => {
 
 test('结果带得回所属需求，用来跳转', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
   noteItem(db, item.item.id, '等测试组排期');
 
   const hit = search(db, '排期').hits[0]!;
@@ -284,7 +284,7 @@ test('结果带得回所属需求，用来跳转', () => {
 
 test('空查询和纯空白返回空结果，不去扫全表', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   for (const q of ['', '   ', '\t\n']) {
     const r = search(db, q);
@@ -298,7 +298,7 @@ test('空查询和纯空白返回空结果，不去扫全表', () => {
 
 test('limit 会被夹在合理区间', () => {
   const db = freshDb();
-  for (let i = 0; i < 8; i++) createItem(db, TEMPLATES, { title: `共同词 ${i}`, role: 'dev' });
+  for (let i = 0; i < 8; i++) makeItem(db, TEMPLATES, { title: `共同词 ${i}`, role: 'dev' });
 
   assert.equal(search(db, '共同词', { limit: 3 }).hits.length, 3);
   assert.equal(search(db, '共同词', { limit: 0 }).hits.length, 1, '下限是 1');
@@ -309,7 +309,7 @@ test('limit 会被夹在合理区间', () => {
 
 test('关闭的需求仍然搜得到 —— 历史不该消失', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '接口鉴权改造',
     role: 'dev',
     description: '那时候换成了统一鉴权',
@@ -354,7 +354,7 @@ test('交接备注也能搜到', () => {
 
 test('rebuildSearchIndex 与触发器增量维护的结果一致', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev', description: '统一鉴权' });
+  const item = makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev', description: '统一鉴权' });
   noteItem(db, item.item.id, '等测试组排期');
   addTodo(db, { itemId: item.item.id, stageId: item.stages[0]!.id, text: '补写时序图' });
   openBlocker(db, {
@@ -390,7 +390,7 @@ test('rebuildSearchIndex 与触发器增量维护的结果一致', () => {
 
 test('重建索引能修掉人为破坏的索引', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
   noteItem(db, item.item.id, '等测试组排期');
 
   // 模拟「索引漂了」：偷偷塞一条不该存在的

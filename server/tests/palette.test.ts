@@ -6,7 +6,7 @@ import { createItem, getItem, listItems } from '../src/domain/items.ts';
 import { listTodos } from '../src/domain/stages.ts';
 import { executePalette, longestCommonPrefix, parsePalette, queryPalette } from '../src/domain/palette.ts';
 import { shiftDays, todayIso } from '../src/domain/dates.ts';
-import { advanceUntil, completeStageTodos, freshDb } from './helpers.ts';
+import { advanceUntil, completeStageTodos, freshDb , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -69,8 +69,9 @@ test('命令名没敲完时给补全候选，而不是报错', () => {
 
 test('搜索需求并跳转', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
-  createItem(db, TEMPLATES, { title: '计费重构', role: 'dev' });
+  // 显式给 REQ 前缀的编号：这一组测的就是「输入 #REQ 前缀时怎么补全」
+  const a = makeItem(db, TEMPLATES, { code: 'REQ-1', title: '接口鉴权改造', role: 'dev' });
+  makeItem(db, TEMPLATES, { code: 'REQ-2', title: '计费重构', role: 'dev' });
 
   const r = queryPalette(db, '鉴权');
   const jump = r.candidates.find((c) => c.kind === 'jump');
@@ -88,7 +89,7 @@ test('搜索需求并跳转', () => {
 
 test('面板搜不到时垫一条「在全文里搜」', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
+  makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
 
   // 面板只搜编号/标题/说明；正文里的东西（备注、待办）得走全文检索
   const r = queryPalette(db, '排期');
@@ -108,7 +109,7 @@ test('面板搜不到时垫一条「在全文里搜」', () => {
 
 test('>编号 精确跳转，找不到就明确报错', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const hit = queryPalette(db, `>${a.item.code}`);
   assert.equal(hit.candidates.length, 1);
@@ -122,7 +123,7 @@ test('>编号 精确跳转，找不到就明确报错', () => {
 
 test('命令预览和执行是同一件事', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { code: 'REQ-1', title: '甲', role: 'dev' });
 
   const q = queryPalette(db, `/todo 写文档 #${a.item.code} @开发`);
   assert.equal(q.error, undefined);
@@ -142,7 +143,7 @@ test('命令预览和执行是同一件事', () => {
 
 test('/log 写一条 note 事件', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   executePalette(db, `/log 与架构师对齐了鉴权协议 #${a.item.code}`);
 
@@ -154,7 +155,7 @@ test('/log 写一条 note 事件', () => {
 
 test('/todo 不给 #REQ 时用界面当前打开的需求', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const r = executePalette(db, '/todo 补单元测试', { currentItemId: a.item.id });
   assert.equal(r.itemId, a.item.id);
@@ -166,7 +167,7 @@ test('/todo 不给 #REQ 时用界面当前打开的需求', () => {
 
 test('/bump 推进阶段；待办没勾完时要 force 加 reason', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const s1 = a.stages[0]!;
   completeStageTodos(db, s1.id);
 
@@ -195,7 +196,7 @@ test('/bump 推进阶段；待办没勾完时要 force 加 reason', () => {
 
 test('/bump outcome:skipped 必须带 reason', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   completeStageTodos(db, a.stages[0]!.id);
 
   const bad = queryPalette(db, `/bump #${a.item.code} outcome:skipped`);
@@ -210,7 +211,7 @@ test('/bump outcome:skipped 必须带 reason', () => {
 
 test('/ddl 不带 @ 改需求整体 DDL，带 @ 改阶段 DDL', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const today = todayIso();
 
   executePalette(db, `/ddl #${a.item.code} 2026-03-05`);
@@ -232,7 +233,7 @@ test('/ddl 不带 @ 改需求整体 DDL，带 @ 改阶段 DDL', () => {
 
 test('/block 建阻塞并让需求变成阻塞态；/unblock 解除', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const r = executePalette(
     db,
@@ -256,7 +257,7 @@ test('/block 建阻塞并让需求变成阻塞态；/unblock 解除', () => {
 
 test('/block dir:blocking 记「我阻塞别人」，需求状况不受影响', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   executePalette(db, `/block #${a.item.code} to:网关模块 need:接口定义 dir:blocking`);
 
@@ -273,7 +274,7 @@ test('/block dir:blocking 记「我阻塞别人」，需求状况不受影响', 
 
 test('/suspend 与 /resume：不带 @ 挂整个需求，带 @ 挂某个阶段', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   executePalette(db, `/suspend #${a.item.code} 人力被抽走`);
   assert.equal(getItem(db, a.item.id)!.item.condition, 'suspended');
@@ -291,7 +292,7 @@ test('/suspend 与 /resume：不带 @ 挂整个需求，带 @ 挂某个阶段', 
 
 test('/close 必须说清是完成还是取消', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const bad = queryPalette(db, `/close #${a.item.code}`);
   assert.match(bad.error!, /必须说明是完成还是取消/);
@@ -321,7 +322,7 @@ test('/help 列出全部命令；敲错命令给出明确提示', () => {
 
 test('定位不到需求或阶段时报人话，而不是抛栈', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   assert.match(queryPalette(db, '/todo 写文档 #REQ-9999').error!, /找不到需求/);
   assert.match(queryPalette(db, `/bump #${a.item.code} @不存在的阶段`).error!, /没有叫「不存在的阶段」的阶段/);
@@ -331,8 +332,8 @@ test('定位不到需求或阶段时报人话，而不是抛栈', () => {
 
 test('模糊匹配到多个需求时给候选，而不是骂人', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
-  createItem(db, TEMPLATES, { title: '接口限流改造', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { code: 'REQ-1', title: '接口鉴权改造', role: 'dev' });
+  makeItem(db, TEMPLATES, { code: 'REQ-2', title: '接口限流改造', role: 'dev' });
 
   // 这正是「输入 #REQ 却被告知请用编号指明」那个恼人场景
   const r = queryPalette(db, `/log 对齐一下 #接口`);
@@ -353,7 +354,7 @@ test('模糊匹配到多个需求时给候选，而不是骂人', () => {
 
 test('推进到没有下一个阶段时提示已是最后一个', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   advanceUntil(db, a.item.id, 'merge');
   completeStageTodos(db, getItem(db, a.item.id)!.item.active_stage_id!);
 
@@ -364,7 +365,7 @@ test('推进到没有下一个阶段时提示已是最后一个', () => {
 });
 
 test('命令执行全部经过事件写入，时间线可完整复盘', () => {  const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   executePalette(db, `/log 开始看代码 #${a.item.code}`);
   executePalette(db, `/todo 补设计文档 #${a.item.code}`);
@@ -414,9 +415,9 @@ test('补全：命令名', () => {
 
 test('补全：需求编号 —— 补到第一个不一样的字符', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
-  createItem(db, TEMPLATES, { title: '乙', role: 'dev' });
-  createItem(db, TEMPLATES, { title: '丙', role: 'dev' });
+  makeItem(db, TEMPLATES, { code: 'REQ-1', title: '甲', role: 'dev' });
+  makeItem(db, TEMPLATES, { code: 'REQ-2', title: '乙', role: 'dev' });
+  makeItem(db, TEMPLATES, { code: 'REQ-3', title: '丙', role: 'dev' });
 
   const r = queryPalette(db, '/todo 增加内容 #REQ');
   assert.equal(r.error, undefined, '正在挑的时候不报错');
@@ -438,7 +439,7 @@ test('补全：需求编号 —— 补到第一个不一样的字符', () => {
 
 test('补全：阶段名要能定位到需求', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const noTarget = queryPalette(db, '/bump @开');
   assert.equal(noTarget.completion, undefined, '不知道是哪个需求，不能瞎补阶段');
@@ -457,7 +458,7 @@ test('补全：阶段名要能定位到需求', () => {
 
 test('补全：枚举修饰符', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const dir = queryPalette(db, `/block #${item.item.code} to:x need:y dir:`);
   assert.deepEqual(dir.candidates.map((c) => c.insert), ['dir:blocked', 'dir:blocking']);
@@ -472,7 +473,7 @@ test('补全：枚举修饰符', () => {
 
 test('补全：这一段已经确定了才报命令的错，正在挑候选时不报', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { code: 'REQ-1', title: '甲', role: 'dev' });
 
   // 唯一候选 → 放行到规划，把「别处缺东西」如实说出来。
   // 注意 `/close` 单独敲出来时，第一个缺的是「哪个需求」—— 那才是该报的错。
@@ -487,8 +488,8 @@ test('补全：这一段已经确定了才报命令的错，正在挑候选时�
   assert.deepEqual(skipped.candidates.map((c) => c.insert), ['outcome:skipped']);
   assert.match(skipped.error!, /跳过阶段必须写原因/);
 
-  // 多个候选 → 别插嘴
-  createItem(db, TEMPLATES, { title: '乙', role: 'dev' });
+  // 多个候选 → 别插嘴（两条都用 REQ- 前缀，`#REQ` 才匹配得到两个）
+  makeItem(db, TEMPLATES, { code: 'REQ-2', title: '乙', role: 'dev' });
   const ambiguous = queryPalette(db, '/log 对齐 #REQ');
   assert.equal(ambiguous.error, undefined);
   assert.ok(ambiguous.candidates.length > 1);
@@ -497,7 +498,7 @@ test('补全：这一段已经确定了才报命令的错，正在挑候选时�
 
 test('补全：唯一候选且能规划时，预览照常给出（预览即承诺）', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const r = queryPalette(db, `/bump #${item.item.code}`);
   assert.equal(r.candidates.length, 1);
@@ -517,7 +518,7 @@ test('longestCommonPrefix 的边界', () => {
 
 test('搜索模式下跳到某条时，insert 是精确引用', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '接口鉴权改造', role: 'dev' });
 
   const r = queryPalette(db, '鉴权');
   const jump = r.candidates.find((c) => c.kind === 'jump')!;

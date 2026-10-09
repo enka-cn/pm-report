@@ -16,14 +16,19 @@ function postJson(app: App, url: string, body: unknown) {
 }
 
 async function createItem(app: App, title = '甲') {
-  const res = await postJson(app, '/api/items', { title, role: 'dev' });
+  // 编号显式给：这几个用例要拿编号去拼命令（`/bump #REQ-x`），而编号现在是可选的。
+  // 计数器而不是固定值，免得同一批用例里撞号。
+  const code = `REQ-API-${++apiItemSeq}`;
+  const res = await postJson(app, '/api/items', { title, code, role: 'dev' });
   assert.equal(res.status, 201);
   return (await res.json()) as {
-    item: { id: number; code: string };
+    item: { id: number; code: string | null };
     stages: { id: number; key: string; name: string }[];
     todos: { id: number; stage_id: number }[];
   };
 }
+
+let apiItemSeq = 0;
 
 // ---------------------------------------------------------------------------
 

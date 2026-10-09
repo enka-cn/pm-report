@@ -20,6 +20,7 @@ import {
   reopenItem,
   resumeItem,
   setItemDueDate,
+  setItemCode,
   suspendItem,
 } from './domain/items.ts';
 import {
@@ -85,6 +86,7 @@ import {
   listProjects,
   listProjectTimeline,
   reclaimProject,
+  setProjectCode,
   unarchiveProject,
   updateProject,
 } from './domain/projects.ts';
@@ -210,6 +212,8 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     const detail = createItem(db, templates, {
       title: asString(body['title'], 'title')!,
       role: asString(body['role'], 'role') as Role,
+      // 编号可选：不传就是没有（预研/算法项目本来就没有单号）
+      code: optionalString(body['code']),
       description: optionalString(body['description']),
       criticality: asNumber(body['criticality'], 'criticality', false),
       dueAt: optionalString(body['dueAt']),
@@ -232,6 +236,26 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
         includeVoided: c.req.query('includeVoided') === 'true',
       }),
     });
+  });
+
+  /**
+   * 补 / 改编号。
+   *
+   * 预研转立项时用：拿到真单号补上。这是一件真实发生过的事，所以会留一条 `code_change` 事件。
+   * **不提供"删掉编号"以外的任何批量语义** —— 编号是身份，改它就该是一次显式的、留痕的动作。
+   */
+  app.patch('/api/items/:id/code', async (c) => {
+    const id = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    setItemCode(db, id, optionalString(body['code']));
+    return c.json({ ok: true });
+  });
+
+  app.patch('/api/projects/:id/code', async (c) => {
+    const id = asNumber(c.req.param('id'), 'id')!;
+    const body = await readJson(c);
+    setProjectCode(db, id, optionalString(body['code']));
+    return c.json({ ok: true });
   });
 
   app.post('/api/items/:id/note', async (c) => {
@@ -608,6 +632,8 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
     return c.json(
       createProject(db, {
         name: asString(body['name'], 'name')!,
+        // 编号可选：看护/预研类项目本来就没有单号
+        code: optionalString(body['code']),
         kind: (asString(body['kind'], 'kind', false) as 'delivery' | 'caretaking') ?? 'delivery',
         description: optionalString(body['description']),
         watchFor: optionalString(body['watchFor']),

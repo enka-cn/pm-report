@@ -71,7 +71,7 @@ export function Projects() {
               className="w-full rounded border border-zinc-800 px-3 py-2 text-left hover:border-zinc-600 hover:bg-zinc-900"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-xs text-zinc-500">{p.code}</span>
+                {p.code && <span className="font-mono text-xs text-zinc-500">{p.code}</span>}
                 <span className="text-sm text-zinc-100">{p.name}</span>
                 <ProjectKindBadge kind={p.kind} />
                 {p.archived_at && <span className="text-xs text-zinc-500">已归档</span>}
@@ -105,6 +105,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   const queryClient = useQueryClient();
 
   const [name, setName] = useState('');
+  const [code, setCode] = useState('');
   const [kind, setKind] = useState<ProjectKind>('caretaking');
   const [description, setDescription] = useState('');
   const [watchFor, setWatchFor] = useState('');
@@ -117,13 +118,14 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
     try {
       const created = await api.createProject({
         name,
+        code: code.trim() || null,
         kind,
         description: description || null,
         watchFor: kind === 'caretaking' ? watchFor : null,
         dueAt: kind === 'delivery' ? dueAt || null : null,
       });
       await queryClient.invalidateQueries();
-      notice.ok(`已创建项目 ${created.code}「${created.name}」`);
+      notice.ok(`已创建项目 ${created.ref}`);
       onDone();
       navigate({ name: 'projects', projectId: created.id });
     } catch (err) {
@@ -147,6 +149,15 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
             onChange={(e) => setName(e.target.value)}
             placeholder="例如：模型量化看护"
             className={`${inputCls} w-56`}
+          />
+        </Field>
+
+        <Field label="编号（可留空）">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            placeholder="看护类通常没有"
+            className={`${inputCls} w-32 font-mono text-sm`}
           />
         </Field>
 

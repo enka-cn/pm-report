@@ -22,7 +22,7 @@ import { listTimeline } from '../src/domain/events.ts';
 import { rebuildSearchIndex, search } from '../src/domain/search.ts';
 import { storeFile } from '../src/domain/storage.ts';
 import { buildReportData } from '../src/domain/reports.ts';
-import { freshDb, makeApp } from './helpers.ts';
+import { freshDb, makeApp , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -61,7 +61,7 @@ test('链接：没写标题就从网址凑一个', () => {
 
 test('链接：增删改，并留下事件', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const link = addLink(db, {
     itemId: item.item.id,
@@ -90,7 +90,7 @@ test('链接：增删改，并留下事件', () => {
 
 test('链接进了全文索引：搜 wiki 页名能找到这条需求', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   addLink(db, { itemId: item.item.id, label: '计费策略评审纪要', url: 'https://wiki.internal/x/9988' });
 
   const hit = search(db, '计费策略评审纪要').hits[0]!;
@@ -111,7 +111,7 @@ test('链接进了全文索引：搜 wiki 页名能找到这条需求', () => {
 
 test('链接事件不会让汇报冒出空标题', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const at = new Date(Date.now() + 1000).toISOString();
   const end = new Date(Date.now() + 2000).toISOString();
@@ -135,7 +135,7 @@ test('链接事件不会让汇报冒出空标题', () => {
 
 test('文件夹：建、改名、嵌套、同层重名要拦', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const assets = createFolder(db, { itemId: item.item.id, name: 'assets' });
   assert.equal(assets.parent_id, null);
@@ -162,7 +162,7 @@ test('文件夹：建、改名、嵌套、同层重名要拦', () => {
 
 test('文件夹：移动要挡环 —— 否则子树会从界面上消失', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const a = createFolder(db, { itemId: item.item.id, name: 'a' });
   const b = createFolder(db, { itemId: item.item.id, parentId: a.id, name: 'b' });
@@ -186,8 +186,8 @@ test('文件夹：移动要挡环 —— 否则子树会从界面上消失', () 
 
 test('文件夹：跨需求移动被挡住', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
-  const b = createItem(db, TEMPLATES, { title: '乙', role: 'dev' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const b = makeItem(db, TEMPLATES, { title: '乙', role: 'dev' });
 
   const fa = createFolder(db, { itemId: a.item.id, name: 'fa' });
   const fb = createFolder(db, { itemId: b.item.id, name: 'fb' });
@@ -203,7 +203,7 @@ test('文件夹：跨需求移动被挡住', () => {
 
 test('文件夹：非空不让删，说清里面有几个', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const assets = createFolder(db, { itemId: item.item.id, name: 'assets' });
 
   // 空的时候可以删
@@ -233,7 +233,7 @@ test('文件夹：非空不让删，说清里面有几个', () => {
 
 test('文件树：和阶段正交，文件按 folder_id 归位', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   const assets = createFolder(db, { itemId: item.item.id, name: 'assets' });
@@ -284,7 +284,7 @@ test('文件树：和阶段正交，文件按 folder_id 归位', () => {
 
 test('文件树通过 GET /api/items/:id 一起返回', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   createFolder(db, { itemId: item.item.id, name: 'assets' });
   addLink(db, { itemId: item.item.id, label: 'wiki', url: 'https://wiki.internal/x' });
 
@@ -299,7 +299,7 @@ test('文件树通过 GET /api/items/:id 一起返回', () => {
 
 test('重建索引要把链接也算上', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   addLink(db, { itemId: item.item.id, label: '评审纪要', url: 'https://wiki.internal/x' });
 
   const snapshot = () =>
@@ -464,7 +464,7 @@ test('HTTP：改名 + 移动一起提交', async () => {
 
 test('迁移 005 的约束：同层重名在数据库层也被挡住', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   createFolder(db, { itemId: item.item.id, name: 'x' });
 
   // 绕过领域层直接插，唯一索引必须拦住
@@ -486,7 +486,7 @@ test('迁移 005 的约束：同层重名在数据库层也被挡住', () => {
 
 test('需求删除时链接和文件夹跟着走（外键级联）', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   createFolder(db, { itemId: item.item.id, name: 'assets' });
   addLink(db, { itemId: item.item.id, label: 'wiki', url: 'https://wiki.internal/x' });
 

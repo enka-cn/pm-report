@@ -10,6 +10,7 @@ import type {
 import { all, count, lastId, nowIso, one, run, transaction, type Db } from '../db/index.ts';
 import { listProjectTimeline, recordEvent } from './events.ts';
 import { assertDateOnly } from './dates.ts';
+import { assertCodeFree, normalizeCode } from './codes.ts';
 import { ensureDefaultProject } from './items.ts';
 
 /**
@@ -58,6 +59,8 @@ export function getProject(db: Db, id: number): ProjectRow | undefined {
 
 export interface CreateProjectInput {
   name: string;
+  /** 编号。可以不给 —— 看护/预研类项目本来就没有单号。不传就是 NULL（不再自动生成 PRJ-N） */
+  code?: string | null;
   kind?: ProjectKind;
   description?: string | null;
   /** 看护型必填：等什么会触发下一次动作 */
@@ -77,8 +80,8 @@ export function createProject(db: Db, input: CreateProjectInput): ProjectRow {
 
   return transaction(db, () => {
     const when = nowIso();
-    const nextId = Number(one<{ n: number }>(db, 'SELECT IFNULL(MAX(id), 0) + 1 AS n FROM project')!.n);
-    const code = `PRJ-${nextId}`;
+    const code = normalizeCode(input.code, '项目编号');
+    if (code !== null) assertCodeFree(db, 'project', 'name', code, 0);
 
     const info = run(
       db,
@@ -194,6 +197,7 @@ export function handoffProject(db: Db, input: HandoffInput): HandoffResult {
       input.projectId,
     ).map((item) => ({
       code: item.code,
+      ref: item.ref,
       title: item.title,
       current_stage:
         item.active_stage_id === null
@@ -437,3 +441,27 @@ export function getProjectDetail(db: Db, id: number): ProjectDetail | undefined 
 }
 
 export { listProjectTimeline };
+
+/** 补 / 改项目编号（同 setItemCode 的理由）。 */
+export function setProjectCode(db: Db, projectId: number, code: string | null): ProjectRow {
+  const clean = normalizeCode(code, '项目编号');
+
+  return transaction(db, () => {
+    const project = one<ProjectRow>(db, 'SELECT * FROM project WHERE id = ?', projectId);
+    if (!project) throw new Error(`项目不存在: ${projectId}`);
+    if (project.code === clean) return project;
+    if (clean !== null) assertCodeFree(db, 'project', 'name', clean, projectId);
+
+    const when = nowIso();
+    run(db, 'UPDATE project SET code = ?, updated_at = ? WHERE id = ?', clean, when, projectId);
+
+    recordEvent(db, {
+      type: 'code_change',
+      projectId,
+      occurredAt: when,
+      payload: { from: project.code, to: clean },
+    });
+
+    return getProject(db, projectId)!;
+  });
+}

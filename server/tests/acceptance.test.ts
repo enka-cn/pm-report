@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createApp } from '../src/app.ts';
 import type { DashboardSection, ItemDetail } from '@manager/shared';
-import { makeApp } from './helpers.ts';
+import { codeOf, makeApp } from './helpers.ts';
 
 type App = ReturnType<typeof createApp>;
 
@@ -39,7 +39,7 @@ function shiftDays(dateStr: string, days: number): string {
 }
 
 function codes(sections: DashboardSection[], key: string): string[] {
-  return sections.find((s) => s.key === key)!.cards.map((c) => c.code);
+  return sections.find((s) => s.key === key)!.cards.map((c) => c.code ?? '(无编号)');
 }
 
 test('P1 验收流程', async () => {
@@ -49,8 +49,10 @@ test('P1 验收流程', async () => {
   const log: string[] = [];
 
   // ---- 1. 新建一个 dev 角色需求，给一个已经过去的整体 DDL 好验证逾期 ----
+  //      编号显式给：真实的公司需求本来就有自己的单号，系统不再自动生成 REQ-N
   const created = await api.post('/api/items', {
     title: '接口鉴权改造',
+    code: 'REQ-2026-0042',
     role: 'dev',
     criticality: 5,
     dueAt: shiftDays(today, -5),
@@ -123,8 +125,8 @@ test('P1 验收流程', async () => {
 
   let sections = ((await (await api.get('/api/dashboard')).json()) as { sections: DashboardSection[] })
     .sections;
-  assert.ok(codes(sections, 'overdue').includes(detail.item.code), '应落在逾期桶');
-  assert.ok(codes(sections, 'blocked_by_others').includes(detail.item.code), '应落在「我被阻塞」桶');
+  assert.ok(codes(sections, 'overdue').includes(codeOf(detail.item)), '应落在逾期桶');
+  assert.ok(codes(sections, 'blocked_by_others').includes(codeOf(detail.item)), '应落在「我被阻塞」桶');
   log.push(
     `驾驶舱：逾期 [${codes(sections, 'overdue').join(',')}]、` +
       `我被阻塞 [${codes(sections, 'blocked_by_others').join(',')}] —— 同一需求可同时在多个桶`,
@@ -140,13 +142,13 @@ test('P1 验收流程', async () => {
 
   sections = ((await (await api.get('/api/dashboard')).json()) as { sections: DashboardSection[] })
     .sections;
-  assert.equal(codes(sections, 'overdue').includes(detail.item.code), false, '挂起后应退出逾期桶');
+  assert.equal(codes(sections, 'overdue').includes(codeOf(detail.item)), false, '挂起后应退出逾期桶');
   assert.equal(
-    codes(sections, 'blocked_by_others').includes(detail.item.code),
+    codes(sections, 'blocked_by_others').includes(codeOf(detail.item)),
     false,
     '挂起后应退出被阻塞桶',
   );
-  assert.ok(codes(sections, 'suspended').includes(detail.item.code));
+  assert.ok(codes(sections, 'suspended').includes(codeOf(detail.item)));
 
   const suspendedCard = sections
     .find((s) => s.key === 'suspended')!
@@ -175,14 +177,16 @@ test('P1 验收流程', async () => {
   log.push('解除阻塞 → 关闭 → 状况「closed」，驾驶舱各桶均为空');
 
   // ---- 8. 命令面板输入编号能跳转 ----
+  assert.ok(detail.item.code, '这条验收路径的前提是需求有编号');
+  const itemCode = detail.item.code;
   const jump = (await (
-    await api.get(`/api/palette/query?q=${encodeURIComponent(detail.item.code)}`)
+    await api.get(`/api/palette/query?q=${encodeURIComponent(itemCode)}`)
   ).json()) as { candidates: { kind: string; itemId?: number }[] };
   const target = jump.candidates.find((c) => c.kind === 'jump');
-  assert.equal(target?.itemId, detail.item.id, `${detail.item.code} 应能跳到对应需求`);
+  assert.equal(target?.itemId, detail.item.id, `${itemCode} 应能跳到对应需求`);
 
   const exact = (await (
-    await api.get(`/api/palette/query?q=${encodeURIComponent(`>${detail.item.code}`)}`)
+    await api.get(`/api/palette/query?q=${encodeURIComponent(`>${itemCode}`)}`)
   ).json()) as { candidates: unknown[] };
   assert.equal(exact.candidates.length, 1, '>编号 应精确命中');
   log.push(`命令面板：输入 ${detail.item.code} 跳转到该需求；>${detail.item.code} 精确命中`);

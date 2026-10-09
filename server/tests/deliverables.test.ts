@@ -16,7 +16,7 @@ import {
   setDeliverableRequired,
 } from '../src/domain/deliverables.ts';
 import { absolutePathOf, relPathOf, sha256Of, storeFile } from '../src/domain/storage.ts';
-import { completeStageTodos, freshDb } from './helpers.ts';
+import { completeStageTodos, freshDb , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -86,7 +86,7 @@ test('sha256 计算稳定', () => {
 test('新建交付物会写 deliverable_added 事件，并出现在需求详情里', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
   const { file } = stageFile('详细设计', dir, '详细设计.md');
 
@@ -116,7 +116,7 @@ test('新建交付物会写 deliverable_added 事件，并出现在需求详情�
 test('同一交付物多次上传形成版本序列，current_version 跟到最新', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
 
   const first = addDeliverable(db, {
@@ -151,7 +151,7 @@ test('同一交付物多次上传形成版本序列，current_version 跟到最�
 test('必交交付物未上传时推进阶段被拒；上传后放行', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
   completeStageTodos(db, s1.id);
 
@@ -191,7 +191,7 @@ test('必交交付物未上传时推进阶段被拒；上传后放行', () => {
 
 test('过程材料（required=0）不构成卡点', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
   completeStageTodos(db, s1.id);
 
@@ -216,7 +216,7 @@ test('过程材料（required=0）不构成卡点', () => {
 test('可以把已上传的交付物追认为必交项', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const { file } = stageFile('文档', dir);
 
   const created = addDeliverable(db, {
@@ -236,7 +236,7 @@ test('可以把已上传的交付物追认为必交项', () => {
 test('交付物按需求聚合，可按阶段过滤', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const [s1, s2] = [d.stages[0]!, d.stages[1]!];
 
   addDeliverable(db, { itemId: d.item.id, stageId: s1.id, name: '甲', file: stageFile('甲', dir).file });
@@ -259,7 +259,7 @@ test('交付物按需求聚合，可按阶段过滤', () => {
 test('上传失败不会因为空名称而写进库', () => {
   const dir = freshFilesDir();
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
 
   assert.throws(
     () => addDeliverable(db, { itemId: d.item.id, name: '   ', file: stageFile('x', dir).file }),

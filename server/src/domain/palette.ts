@@ -573,10 +573,11 @@ function itemDetail(db: Db, item: ItemViewRow): string {
 function toJumpCandidate(db: Db, item: ItemViewRow): PaletteCandidate {
   return {
     kind: 'jump',
-    label: `${item.code}  ${item.title}`,
+    label: item.ref,
     detail: itemDetail(db, item),
-    // Tab 补全时插入精确引用 —— 把「模糊搜索」变成「指名道姓」
-    insert: `#${item.code}`,
+    // Tab 补全时插入精确引用 —— 把「模糊搜索」变成「指名道姓」。
+    // 没编号的就插标题：虽然长，但它是唯一的稳定标识（# 引用本来就同时匹配编号和标题）
+    insert: `#${item.code ?? item.title}`,
     itemId: item.id,
     itemCode: item.code,
   };

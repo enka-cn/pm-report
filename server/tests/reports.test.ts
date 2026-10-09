@@ -17,7 +17,7 @@ import {
   unfinalizeReport,
   updateReport,
 } from '../src/domain/reports.ts';
-import { REAL_TODAY, completeStageTodos, freshDb, shift } from './helpers.ts';
+import { REAL_TODAY, completeStageTodos, freshDb, shift , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -31,7 +31,7 @@ const justAfterNow = () => new Date(Date.now() + 2000).toISOString();
 
 /** 造一个「有推进、有阻塞、有备注」的需求，用来喂汇报 */
 function scenario(db: ReturnType<typeof freshDb>) {
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '接口鉴权改造',
     role: 'dev',
     criticality: 5,
@@ -103,7 +103,7 @@ test('汇报数据：区间内零事件的需求进「静默」，不混进进�
 
 test('静默项超过一天时给出天数', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '久未动', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '久未动', role: 'dev' });
 
   // 区间从需求创建之后开始，而「今天」推到 9 天之后
   const justAfter = new Date(Date.now() + 1000).toISOString();
@@ -121,7 +121,7 @@ test('静默项超过一天时给出天数', () => {
 
 test('汇报数据：挂起的需求不进风险段，单独列在第四节', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '日志采集优化',
     role: 'se',
     dueAt: shift(REAL_TODAY, -8),
@@ -147,7 +147,7 @@ test('汇报数据：挂起的需求不进风险段，单独列在第四节', ()
 
 test('「我阻塞别人」也进风险段，方向标签正确', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '计费重构', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '计费重构', role: 'dev' });
   openBlocker(db, {
     itemId: item.item.id,
     direction: 'blocking_others',
@@ -164,7 +164,7 @@ test('「我阻塞别人」也进风险段，方向标签正确', () => {
 
 test('删除的待办会出现在进展里（删了什么都得说清楚）', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   removeTodo(db, item.todos[0]!.id);
 
   const data = buildReportData(db, { periodStart: ago(1), periodEnd: justAfterNow(), today: REAL_TODAY });
@@ -191,7 +191,13 @@ test('生成草稿：渲染出完整 Markdown，不残留模板标签', () => {
   assert.match(md, /测试组/);
   assert.match(md, /阶段推进：需求反串讲 → 开发/);
   assert.match(md, /与架构师对齐了鉴权协议/);
-  assert.match(md, new RegExp(`\\| ${item.item.code} \\|`), '下区间计划表里应有这条需求');
+  // 表里现在放的是 ref（有编号就是「编号  标题」），不再是光秃秃的编号 ——
+  // 没编号的需求也得在这一列里认得出来
+  assert.match(
+    md,
+    new RegExp(`\\| ${item.item.ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\|`),
+    '下区间计划表里应有这条需求',
+  );
   assert.doesNotMatch(md, /\{\{|\}\}/, '渲染完不能残留模板标签');
 
   db.close();

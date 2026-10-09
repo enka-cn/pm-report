@@ -28,8 +28,10 @@ import { renderTemplate, type TemplateContext } from './template.ts';
 // ---------------------------------------------------------------------------
 
 export interface ReportBlockerLine {
-  item_code: string;
+  item_code: string | null;
   item_title: string;
+  /** item_code + item_title 的显示形态，没编号时就是标题 */
+  item_ref: string;
   direction: string;
   direction_label: string;
   counterparty: string;
@@ -41,14 +43,17 @@ export interface ReportBlockerLine {
 }
 
 export interface ReportRiskItem {
-  code: string;
+  code: string | null;
+  /** 显示用标识，没编号时就是标题 */
+  ref: string;
   title: string;
   days: number;
   next_ddl: string;
 }
 
 export interface ReportProgress {
-  code: string;
+  code: string | null;
+  ref: string;
   title: string;
   role: string;
   role_label: string;
@@ -63,7 +68,8 @@ export interface ReportProgress {
 }
 
 export interface ReportPlanLine {
-  code: string;
+  code: string | null;
+  ref: string;
   title: string;
   current_stage: string;
   next_stage: string;
@@ -71,7 +77,8 @@ export interface ReportPlanLine {
 }
 
 export interface ReportAgeLine {
-  code: string;
+  code: string | null;
+  ref: string;
   title: string;
   days: number;
   reason: string;
@@ -183,6 +190,7 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
       return {
         item_code: item.code,
         item_title: item.title,
+        item_ref: item.ref,
         direction: b.direction,
         direction_label: DIRECTION_LABELS[b.direction],
         counterparty: b.counterparty,
@@ -210,6 +218,7 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
     .filter((x) => daysBetween(today, x.ddl) < 0)
     .map((x) => ({
       code: x.item.code,
+      ref: x.item.ref,
       title: x.item.title,
       days: -daysBetween(today, x.ddl),
       next_ddl: x.ddl,
@@ -223,6 +232,7 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
     })
     .map((x) => ({
       code: x.item.code,
+      ref: x.item.ref,
       title: x.item.title,
       days: daysBetween(today, x.ddl),
       next_ddl: x.ddl,
@@ -305,7 +315,8 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
       }
 
       return {
-        code: item?.code ?? `#${itemId}`,
+        code: item?.code ?? null,
+        ref: item?.ref ?? '（已删除的需求）',
         title: item?.title ?? '（已不存在）',
         role: item?.role ?? '',
         role_label: item ? ROLE_LABELS[item.role] : '',
@@ -332,7 +343,8 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
         p.done_todos > 0 ||
         p.removed_todos > 0,
     )
-    .sort((a, b) => a.code.localeCompare(b.code));
+    // 按显示标识排 —— 没编号的排它自己的标题，而不是排到一个空的 code 上
+    .sort((a, b) => a.ref.localeCompare(b.ref, 'zh'));
 
   // ---- 三、下区间计划 ----
   const active_items: ReportPlanLine[] = quietItems
@@ -345,12 +357,13 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
       };
     })
     .sort((a, b) => {
-      if (a.ddl === null) return b.ddl === null ? a.item.code.localeCompare(b.item.code) : 1;
+      if (a.ddl === null) return b.ddl === null ? a.item.ref.localeCompare(b.item.ref, 'zh') : 1;
       if (b.ddl === null) return -1;
       return a.ddl.localeCompare(b.ddl);
     })
     .map(({ item, stages: itemStages, ddl }) => ({
       code: item.code,
+      ref: item.ref,
       title: item.title,
       current_stage: currentStageLabel(item, itemStages),
       next_stage: nextStageName(itemStages, item.active_stage_id),
@@ -371,6 +384,7 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
       // 语义其实统一：这个区间里它一条进展都没有。
       return {
         code: item.code,
+        ref: item.ref,
         title: item.title,
         days,
         reason: days >= 1 ? `${days} 天无更新` : '本区间无进展',
@@ -386,7 +400,7 @@ export function buildReportData(db: Db, opts: BuildReportOptions = {}): ReportDa
       const since = item.suspended_at ?? active?.suspended_at;
       const days = since ? daysBetween(localDate(since), today) : 0;
       const why = item.suspended_reason ?? active?.suspended_reason ?? '';
-      return { code: item.code, title: item.title, days, reason: why };
+      return { code: item.code, ref: item.ref, title: item.title, days, reason: why };
     })
     .sort((a, b) => b.days - a.days);
 

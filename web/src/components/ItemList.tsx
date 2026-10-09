@@ -102,7 +102,7 @@ export function ItemList() {
                 onClick={() => navigate({ name: 'item', id: item.id, stageId: null })}
                 className="cursor-pointer border-b border-zinc-800/60 hover:bg-zinc-800/40"
               >
-                <td className="px-2 py-1.5 font-mono text-xs text-zinc-500">{item.code}</td>
+                <td className="px-2 py-1.5 font-mono text-xs text-zinc-500">{item.code ?? '—'}</td>
                 <td className="px-2 py-1.5 text-zinc-100">{item.title}</td>
                 <td className="px-2 py-1.5">
                   <RoleBadge role={item.role} />
@@ -142,6 +142,7 @@ export function NewItemForm({
 
   const [title, setTitle] = useState('');
   const [pipelineKey, setPipelineKey] = useState('');
+  const [code, setCode] = useState('');
   const [dueAt, setDueAt] = useState('');
   const [criticality, setCriticality] = useState(3);
   const [busy, setBusy] = useState(false);
@@ -158,13 +159,14 @@ export function NewItemForm({
         title,
         role: chosen.role,
         pipelineKey: chosen.key,
+        code: code.trim() || null,
         dueAt: dueAt || null,
         criticality,
         projectId: projectId ?? null,
       });
       await queryClient.invalidateQueries();
       notice.ok(
-        `已创建 ${created.item.code}，按「${chosen.name}」生成了 ${created.stages.length} 个阶段`,
+        `已创建 ${created.item.ref}，按「${chosen.name}」生成了 ${created.stages.length} 个阶段`,
       );
       onDone();
       navigate({ name: 'item', id: created.item.id, stageId: null });
@@ -188,6 +190,15 @@ export function NewItemForm({
           onChange={(e) => setTitle(e.target.value)}
           placeholder="例如：接口鉴权改造"
           className="w-64 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+        />
+      </Field>
+
+      <Field label="编号（可留空）">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          placeholder="例：REQ-1234"
+          className="w-28 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-zinc-100 outline-none focus:border-zinc-500"
         />
       </Field>
 

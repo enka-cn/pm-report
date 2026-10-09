@@ -18,7 +18,7 @@ import {
   suspendItem,
 } from '../src/domain/items.ts';
 import { advanceStage, closeBlocker, listTodos, removeTodo, setTodoDone } from '../src/domain/stages.ts';
-import { advanceUntil, completeStageTodos, freshDb } from './helpers.ts';
+import { advanceUntil, completeStageTodos, freshDb , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -44,9 +44,10 @@ test('迁移：可重复执行；改动已应用的迁移会报错而不是默�
 
 test('建需求：按角色实例化流水线与待办，首阶段自动开始', () => {
   const db = freshDb();
-  const detail = createItem(db, TEMPLATES, { title: '接口改造', role: 'dev' });
+  const detail = makeItem(db, TEMPLATES, { title: '接口改造', role: 'dev' });
 
-  assert.match(detail.item.code, /^REQ-\d+$/);
+  assert.ok(detail.item.code, 'makeItem 会给一个测试编号');
+  assert.ok(detail.item.ref.includes('接口改造'), 'ref 里带着标题');
   assert.equal(detail.item.condition, 'normal');
   assert.equal(detail.item.criticality, 3, '未指定关键度时取 settings 默认值');
 
@@ -72,7 +73,7 @@ test('建需求：按角色实例化流水线与待办，首阶段自动开始',
 
 test('SE 角色走另一套流水线', () => {
   const db = freshDb();
-  const detail = createItem(db, TEMPLATES, { title: '架构设计', role: 'se' });
+  const detail = makeItem(db, TEMPLATES, { title: '架构设计', role: 'se' });
   assert.deepEqual(
     detail.stages.map((s) => s.key),
     ['arch_design', 'seg_review', 'tmg_review', 'req_walkthrough', 'dev_tracking', 'close'],
@@ -82,7 +83,7 @@ test('SE 角色走另一套流水线', () => {
 
 test('阶段推进必须显式确认：待办没勾完拒绝，强推必须写原因，跳过硬性要求原因', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
   const itemId = d.item.id;
 
@@ -120,7 +121,7 @@ test('阶段推进必须显式确认：待办没勾完拒绝，强推必须写�
 
 test('强推会记录被越过的事项，便于事后追溯', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'x', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'x', role: 'dev' });
   const s1 = d.stages[0]!;
 
   const r = advanceStage(db, { itemId: d.item.id, stageId: s1.id, forced: true, reason: '急上线，先跳过' });
@@ -138,7 +139,7 @@ test('强推会记录被越过的事项，便于事后追溯', () => {
 
 test('状况由事实投影：normal → blocked → suspended → closed', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'y', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'y', role: 'dev' });
   const itemId = d.item.id;
 
   assert.equal(getItem(db, itemId)!.item.condition, 'normal');
@@ -176,7 +177,7 @@ test('状况由事实投影：normal → blocked → suspended → closed', () =
 
 test('「我阻塞别人」不算我被阻塞', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'z', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'z', role: 'dev' });
   const itemId = d.item.id;
 
   db.prepare(
@@ -193,7 +194,7 @@ test('「我阻塞别人」不算我被阻塞', () => {
 
 test('数据库强制「同一需求最多一个进行中阶段」', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'w', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: 'w', role: 'dev' });
   const when = nowIso();
 
   assert.throws(
@@ -215,7 +216,7 @@ test('数据库强制「同一需求最多一个进行中阶段」', () => {
 
 test('事件表 append-only：改与删被数据库拒绝，作废可行', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'v', role: 'se' });
+  const d = makeItem(db, TEMPLATES, { title: 'v', role: 'se' });
   const ev = listTimeline(db, d.item.id)[0]!;
 
   assert.throws(() => run(db, 'UPDATE event SET type = ? WHERE id = ?', 'note', ev.id), /append-only/);
@@ -235,7 +236,7 @@ test('事件表 append-only：改与删被数据库拒绝，作废可行', () =>
 
 test('下一个 DDL = min(未结束阶段的 planned_end, 需求整体 due_at)', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: 'u', role: 'dev', dueAt: '2026-12-31' });
+  const d = makeItem(db, TEMPLATES, { title: 'u', role: 'dev', dueAt: '2026-12-31' });
   const second = d.stages[1]!;
 
   run(db, 'UPDATE stage SET planned_end = ? WHERE id = ?', '2026-03-01', second.id);
@@ -258,8 +259,8 @@ test('下一个 DDL = min(未结束阶段的 planned_end, 需求整体 due_at)',
 
 test('列表默认不含已关闭需求', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
-  const b = createItem(db, TEMPLATES, { title: '乙', role: 'se' });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const b = makeItem(db, TEMPLATES, { title: '乙', role: 'se' });
 
   assert.equal(listItems(db).length, 2);
   closeItem(db, b.item.id, { reason: 'cancelled' });
@@ -273,7 +274,7 @@ test('列表默认不含已关闭需求', () => {
 
 test('待办可删：行不留，但事件日志里留下原文', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const s1 = d.stages[0]!;
   const todo = d.todos.find((t) => t.stage_id === s1.id && t.source === 'template')!;
 
@@ -301,7 +302,7 @@ test('待办可删：行不留，但事件日志里留下原文', () => {
 
 test('删除已完成的待办也不会影响汇报口径（汇报读的是事件）', () => {
   const db = freshDb();
-  const d = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const d = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const s1 = d.stages[0]!;
   const todo = d.todos.find((t) => t.stage_id === s1.id)!;
 

@@ -18,6 +18,7 @@ import { listDeliverables, listRemovedDeliverables } from './deliverables.ts';
 import { folderTree } from './folders.ts';
 import { listLinks } from './links.ts';
 import { assertDateOnly } from './dates.ts';
+import { assertCodeFree, normalizeCode } from './codes.ts';
 
 // ---------------------------------------------------------------------------
 // 项目容器（P1 隐式，UI 不暴露；见设计文档 D4）
@@ -48,6 +49,11 @@ export function ensureDefaultProject(db: Db): number {
 export interface CreateItemInput {
   title: string;
   role: Role;
+  /**
+   * 编号。**可以不给** —— 预研/算法项目本来就没有外部单号。
+   * 不传就是 NULL，系统不再自动生成 REQ-N（真实需求有自己的单号，自动生成的号对不上）。
+   */
+  code?: string | null;
   description?: string | null;
   criticality?: number;
   dueAt?: string | null;
@@ -74,9 +80,18 @@ export function createItem(
   return transaction(db, () => {
     const when = nowIso();
 
-    // 单用户场景，取 max(id)+1 生成人类可读编号足够；UNIQUE 约束是兜底。
-    const nextId = Number(one<{ n: number }>(db, 'SELECT IFNULL(MAX(id), 0) + 1 AS n FROM item')!.n);
-    const code = `${settings.item.code_prefix}-${nextId}`;
+    // 编号可以没有 —— 预研/算法项目本来就没有外部单号，硬编一个等于凭空造一个
+    // 你必须记住的映射。**这里不再自动生成 REQ-N**：真实需求本来就有自己的单号，
+    // 自动生成的号会变成第三种编号，谁也对不上。
+    const code = normalizeCode(input.code, '需求编号');
+    if (code !== null) {
+      const clash = one<{ title: string }>(
+        db,
+        'SELECT title FROM item WHERE code = ? COLLATE NOCASE',
+        code,
+      );
+      if (clash) throw new Error(`编号「${code}」已经被「${clash.title}」占了`);
+    }
 
     const info = run(
       db,
@@ -381,3 +396,30 @@ export function reopenItem(db: Db, itemId: number, note?: string): void {
 }
 
 export { activeStage, listStages, listTodos, listBlockers, listTimeline, listEventsInRange, count };
+
+/**
+ * 补 / 改编号。
+ *
+ * 预研转立项时用：拿到真单号补上。这是一件**真实发生过的事**，所以要留在时间线上 ——
+ * 「这个方向当时是预研，后来立了项」在这条需求的历史里看得见。
+ */
+export function setItemCode(db: Db, itemId: number, code: string | null): void {
+  const clean = normalizeCode(code, '需求编号');
+
+  transaction(db, () => {
+    const item = one<ItemViewRow>(db, 'SELECT * FROM v_item WHERE id = ?', itemId);
+    if (!item) throw new Error(`需求不存在: ${itemId}`);
+    if (item.code === clean) return; // 没变化就别写事件，免得时间线上多一条噪音
+    if (clean !== null) assertCodeFree(db, 'item', 'title', clean, itemId);
+
+    const when = nowIso();
+    run(db, 'UPDATE item SET code = ?, updated_at = ? WHERE id = ?', clean, when, itemId);
+
+    recordEvent(db, {
+      type: 'code_change',
+      itemId,
+      occurredAt: when,
+      payload: { from: item.code, to: clean },
+    });
+  });
+}

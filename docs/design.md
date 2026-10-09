@@ -139,7 +139,7 @@ report 汇报                       一次快照，记录区间 [period_start, p
 | `code` | TEXT UNIQUE | 人类可读编号，如 `REQ-123`。命令面板跳转、CLI 都靠它 |
 | `project_id` | FK | P1 恒为默认项目 |
 | `title` / `description` | TEXT | 描述支持 Markdown |
-| `role` | TEXT | `se` / `dev` / `test` / `maint`。**决定流水线模板** |
+| `role` | TEXT | `se` / `dev` / `maint`。**决定流水线模板**（只有真的有模板的角色才留在这儿，见 §5.2） |
 | `criticality` | INT 1–5 | 关键度，参与排序打分 |
 | `due_at` | DATE NULL | 需求整体交付 DDL |
 | `suspended_at` / `suspended_reason` | TEXT NULL | 需求级挂起（跨越阶段，如资源被抽走、待重新排期） |
@@ -242,6 +242,58 @@ CREATE UNIQUE INDEX idx_stage_one_active ON stage(item_id)
 | `finalized_at` | 定稿时间；非空即已定稿 |
 
 **核心机制**：保存为 `final` 后，它的 `period_end` 自动成为下次生成的 `period_start`。所以生成汇报只需要一次查询，不需要你回想。
+
+---
+
+### 3.3 编号是可选的
+
+编号的唯一作用是**一个你能记住、说得出、打得快的短标识**。所以它可以是 NULL。
+
+预研 / 算法看护类项目往往没有外部需求单号 —— 它们是上游团队交付过来、我们长期持有的东西。
+硬编一个 `REQ-6` 等于凭空造一个你必须记住的映射，**比没有标识更糟，因为它看起来像个标识**。
+
+| | |
+|---|---|
+| 建的时候 | 留空 = 没有编号。**不再自动生成 `REQ-N`** —— 真实需求本来就有自己的公司单号，自动生成的是第三种编号，谁也对不上 |
+| 自己起短名 | 可以是中文（`量化-平台A`）。不能含空格 / `#` / `@`：空格会把 `#引用` 切断，后两个是命令面板的语法 |
+| 事后补 | `PATCH /api/items/:id/code`（项目同理）。预研转立项、拿到真单号时补上，写一条 `code_change` 事件 —— 「这个方向当时是预研，后来立了项」留在时间线上 |
+
+#### `ref`：显示用的标识，在 schema 里算好
+
+```sql
+ALTER TABLE item ADD COLUMN ref TEXT
+  GENERATED ALWAYS AS (CASE WHEN code IS NULL THEN title ELSE code || '  ' || title END) VIRTUAL;
+```
+
+用**虚拟生成列**而不是让前端各写各的判断，好处很实在：
+
+- 判断只写一次，改规则只改 schema
+- `SELECT *` 自动带上它，连 `v_item`（`SELECT i.*`）都不用改
+- **以后新增的查询不会漏掉这个降级逻辑** —— 漏掉才是这类改动最容易出的错
+- 改 `code` 之后 `ref` 自动重算（虚拟列每次读都现算）
+
+前端规则：**需要单个字符串的地方用 `ref`；分成「灰色编号 + 亮色标题」两段的地方，
+用「有编号才渲染那一段」**。不要自己拼 `code + title` —— 那样每个地方都得记得处理 NULL，
+漏一处就会显示出 `null 模型量化预研`。
+
+#### 没编号不会少任何能力
+
+命令面板的 `#引用` 本来就是 `code LIKE ? OR title LIKE ?`，所以 `#量化` 照样能找到
+「模型量化预研」；全文索引、列表搜索也搜标题。Tab 补全在没编号时插**标题**
+（长，但它是唯一的稳定标识）。
+
+#### 两个实现上的坑
+
+**迁移是一行**：`ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`。这是 SQLite 3.53 才有的能力，
+老版本得走「建新表 → 拷 → 删旧 → 改名」，而 `item` 被 7 张表 + `v_item` 视图 + 一堆触发器引用 ——
+那是最危险的一类迁移。**换更老的 SQLite 会让迁移直接失败**，不是静默降级。
+
+`UNIQUE` 保留：SQLite 把 NULL 当作互不相同，所以多行「没有编号」可以并存；但两个一样的编号
+仍然会被拦住（而且报的是「已经被 XXX 占了」，不是 `UNIQUE constraint failed`）。
+
+**`rebuildSearchIndex` 里原来写的是 `code || ' ' || title`**，而 SQLite 里 `NULL || ' '` 还是 `NULL` ——
+没编号的东西整条索引变成空，也就是**搜不到**。这种 bug 不报错，只是让东西悄悄消失。
+增量触发器改用 `ref` 之后，全量重建也必须用 `ref`，两处不一致会导致「重建一次索引，搜索结果就变了」。
 
 ---
 
@@ -1004,7 +1056,7 @@ GET/PUT /api/settings, /api/pipelines
 | Q1 | 汇报默认区间取"上次定稿到现在"还是固定 7 天？ | 上次定稿到现在；无历史时取 7 天 |
 | Q2 | 是否需要支持同一需求下多个并行阶段？ | P1 不支持（`idx_stage_one_active` 部分唯一索引硬约束），确实需要时去掉该索引即可 |
 | Q3 | 是否需要记录投入工时？ | 不做，容易滑向通用 PM 工具 |
-| Q4 | 需求编号 `REQ-123` 是自动生成还是手工填？ | 自动生成，允许手工改（改编号会写事件） |
+| Q4 | 需求编号 `REQ-123` 是自动生成还是手工填？ | **已定，见 §3.3**：可以不填、可以自己起短名、可以事后补（改编号会写事件） |
 | Q5 | 交付物是否需要保留"每个阶段必须交的东西"清单的可视化编辑？ | P1 直接编辑模板 YAML，P2 上界面 |
 
 ---
@@ -1051,7 +1103,7 @@ GET/PUT /api/settings, /api/pipelines
 | 层 | 改动 |
 |---|---|
 | 迁移 `002_caretaking_projects.sql` | `project.kind` / `owner` / `watch_for`；`event.project_id` + 重建 append-only 触发器（漏掉这一列的话它就成了唯一能被偷偷改掉的字段） |
-| 领域层 [projects.ts](server/src/domain/projects.ts) | 项目 CRUD、`handoffProject()`、归档；`createItem` 接受 `projectId` |
+| 领域层 [projects.ts](../server/src/domain/projects.ts) | 项目 CRUD、`handoffProject()`、归档；`createItem` 接受 `projectId` |
 | 驾驶舱 | 「看护中」一块，**只看 `owner = 'me'` 的** —— 交接改变的是「谁的压力」 |
 | 前端 | 项目列表 + 项目详情（看护条件 / 说明 / 子需求 / 交接 / 项目时间线） |
 

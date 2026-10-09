@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { Role } from '@manager/shared';
 import { loadPipelines } from '../src/domain/pipeline.ts';
 import { ROLE_LABELS } from '../src/domain/labels.ts';
 import { createItem, closeItem, getItem } from '../src/domain/items.ts';
 import { advanceStage } from '../src/domain/stages.ts';
 import { createProject } from '../src/domain/projects.ts';
 import { computeDashboardPayload } from '../src/domain/dashboard.ts';
-import { REAL_TODAY, completeStageTodos, freshDb, makeApp, shift } from './helpers.ts';
+import { REAL_TODAY, completeStageTodos, freshDb, makeApp, shift , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -33,7 +34,7 @@ test('每一条模板都能真的建出需求 —— 模板和建需求逻辑必
   const db = freshDb();
 
   for (const template of TEMPLATES) {
-    const detail = createItem(db, TEMPLATES, {
+    const detail = makeItem(db, TEMPLATES, {
       title: `试 ${template.key}`,
       role: template.role,
       pipelineKey: template.key,
@@ -68,18 +69,28 @@ test('看护维护流水线的预设：定位 → 修复 → 验证 → 合入',
 
 test('维护角色现在可以建需求了（之前下拉里有、选中必失败）', () => {
   const db = freshDb();
-  const detail = createItem(db, TEMPLATES, { title: '修个 bug', role: 'maint' });
+  const detail = makeItem(db, TEMPLATES, { title: '修个 bug', role: 'maint' });
   assert.equal(detail.item.role, 'maint');
   assert.equal(detail.item.active_stage_id, detail.stages[0]!.id);
   assert.equal(detail.stages[0]!.name, '定位');
   db.close();
 });
 
-test('没有模板的角色会报人话，并列出已有模板', () => {
+test('每个角色都必须有模板 —— 否则它就是界面上一个「选了必然报错」的选项', () => {
+  // 这条不变量是拿真 bug 换来的：Role 枚举里曾经有 test 和 maint，两者都没有模板，
+  // 而新建需求的下拉是照着枚举渲染的 —— 选它们必然失败。
+  const covered = new Set(TEMPLATES.map((t) => t.role));
+  for (const role of Object.keys(ROLE_LABELS)) {
+    assert.ok(covered.has(role as Role), '角色「' + role + '」没有对应的流水线模板');
+  }
+});
+
+test('真传了个没有模板的角色时，报人话并列出已有模板', () => {
   const db = freshDb();
+  // API 层是 as Role 从字符串转过来的，所以运行时会真的走到这条路
   assert.throws(
-    () => createItem(db, TEMPLATES, { title: 'x', role: 'test' }),
-    /角色 test 没有对应的流水线模板.*maint_default/,
+    () => makeItem(db, TEMPLATES, { title: 'x', role: 'nonexistent' as Role }),
+    /角色 nonexistent 没有对应的流水线模板.*maint_default/,
     '报错要告诉人「现在有哪些能用」',
   );
   db.close();
@@ -110,7 +121,7 @@ test('看护场景端到端：算法团队交付 → 算法侧报 bug → 修完
   );
 
   // ② 触发：算法侧报了一个 bug，建一条维护需求（不用走反串讲 → DT → 送测那一整套）
-  const bug = createItem(db, TEMPLATES, {
+  const bug = makeItem(db, TEMPLATES, {
     title: '平台A 量化结果偏差',
     role: 'maint',
     pipelineKey: 'maint_default',

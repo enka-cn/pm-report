@@ -26,6 +26,28 @@
 2. **已应用的迁移文件不可修改。**
    迁移运行器会校验 checksum 并在不匹配时报错。改 schema 请新增 `00N_xxx.sql`。
 
+## 显示编号一律用 `ref`，不要自己拼
+
+`item.code` / `project.code` **可以是 NULL**（预研/算法项目没有单号）。数据库里有一个
+虚拟生成列 `ref`：有编号就是「编号  标题」，没有就只是标题。
+
+- **单个字符串**（卡片标签、tooltip、汇报模板、`select` 选项）→ 用 `ref`
+- **分成「灰色编号 + 亮色标题」两段的地方** → 用 `{code && <span>…</span>}`，别依赖
+  「`{null}` 渲染成空」
+
+不要写 `code + ' ' + title`：每个地方都得记得处理 NULL，漏一处就显示出 `null 模型量化预研`。
+汇报模板里也全是 `{{ref}}`（原来那 7 处 `{{code}}` 已经全换掉了）。
+
+**搜索索引也必须用 `ref`**：`NULL || ' '` 在 SQLite 里还是 `NULL`，用了 `code || ' ' || title`
+的话没编号的东西整条索引变空 —— 不报错，只是搜不到。
+
+## SQLite 版本要求
+
+迁移 007 用了 `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`，**这是 SQLite 3.53 才有的能力**。
+`package.json` 已经锁了 Node 24（自带 3.53.4），但如果哪天换回老版本，**迁移会直接失败**而不是
+静默降级 —— 那就得改写「建新表 → 拷 → 删旧 → 改名」的重建流程，而 `item` 被 7 张表 + 视图 +
+触发器引用，是最危险的一类迁移。
+
 ## 事务不支持嵌套，所以有 `*InTx`
 
 `transaction()` 是扁平的 `BEGIN IMMEDIATE`（见 `db/index.ts`），**嵌套会静默失效，所以干脆不支持**。
@@ -138,6 +160,8 @@ pnpm start
 | DELETE | `/api/folders/:id` | 删文件夹（非空拒绝） |
 | DELETE | `/api/deliverables/:id` | 移除交付物（软删除，不动磁盘） |
 | POST | `/api/deliverables/:id/restore` | 从「已移除」恢复 |
+| PATCH | `/api/items/:id/code` | 补 / 改需求编号（`code: null` 就是取消编号） |
+| PATCH | `/api/projects/:id/code` | 同上，项目版 |
 | GET | `/api/storage` | 磁盘占用与可回收量 |
 | POST | `/api/storage/purge` | 回收磁盘（删掉无引用的字节） |
 | POST | `/api/deliverables/batch` | 批量 `move` / `remove` / `restore`（一个事务，全成或全不成） |

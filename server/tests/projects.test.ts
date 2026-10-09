@@ -17,7 +17,7 @@ import {
   unarchiveProject,
   updateProject,
 } from '../src/domain/projects.ts';
-import { REAL_TODAY, completeStageTodos, freshDb, shift } from './helpers.ts';
+import { REAL_TODAY, completeStageTodos, freshDb, shift , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -32,7 +32,7 @@ const CARETAKING = {
 
 test('默认项目仍然隐式存在：不传 projectId 的需求照旧走它', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   assert.equal(item.project.is_default, 1);
   assert.equal(item.project.code, 'DEFAULT');
@@ -53,11 +53,12 @@ test('建项目并把需求挂进去', () => {
     dueAt: shift(REAL_TODAY, 60),
   });
 
-  assert.match(project.code, /^PRJ-\d+$/);
+  assert.equal(project.code, null, '项目编号也可以没有');
+  assert.equal(project.ref, '2026H1 版本', '没编号时 ref 就是项目名');
   assert.equal(project.kind, 'delivery');
   assert.equal(project.owner, 'me');
 
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '接口鉴权改造',
     role: 'dev',
     projectId: project.id,
@@ -113,7 +114,7 @@ test('看护型项目不进时间桶，但出现在驾驶舱的「看护中」',
   assert.equal(payload.caretaking[0]!.watch_for, CARETAKING.watchFor);
 
   // 子需求是普通需求：真逾期了就该进逾期桶
-  const item = createItem(db, TEMPLATES, {
+  const item = makeItem(db, TEMPLATES, {
     title: '平台C 量化',
     role: 'dev',
     dueAt: shift(REAL_TODAY, -3),
@@ -135,7 +136,7 @@ test('有在途子需求的看护项目排在前面', () => {
   const db = freshDb();
   const idle = createProject(db, { ...CARETAKING, name: '闲置看护' });
   const busy = createProject(db, { ...CARETAKING, name: '忙碌看护' });
-  createItem(db, TEMPLATES, { title: '平台C 量化', role: 'dev', projectId: busy.id });
+  makeItem(db, TEMPLATES, { title: '平台C 量化', role: 'dev', projectId: busy.id });
 
   const { caretaking } = computeDashboardPayload(db, { today: REAL_TODAY });
   assert.deepEqual(
@@ -152,13 +153,13 @@ test('交接：改负责人，并把接手方需要知道的全部上下文写�
   const db = freshDb();
   const project = createProject(db, CARETAKING);
 
-  const a = createItem(db, TEMPLATES, {
+  const a = makeItem(db, TEMPLATES, {
     title: '平台C 量化',
     role: 'dev',
     dueAt: shift(REAL_TODAY, 5),
     projectId: project.id,
   });
-  const done = createItem(db, TEMPLATES, { title: '平台A 量化', role: 'dev', projectId: project.id });
+  const done = makeItem(db, TEMPLATES, { title: '平台A 量化', role: 'dev', projectId: project.id });
   // 把平台A 那条关掉：它不该出现在交接清单里
   run(db, 'UPDATE item SET closed_at = ?, close_reason = ? WHERE id = ?', '2026-01-01T00:00:00Z', 'done', done.item.id);
   openBlocker(db, {
@@ -290,7 +291,7 @@ test('交接的几种错法都要报人话', () => {
     /本来就归 SE组 负责/,
   );
 
-  const def = createItem(db, TEMPLATES, { title: '甲', role: 'dev' }).project.id;
+  const def = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' }).project.id;
   assert.throws(() => handoffProject(db, { projectId: def, toOwner: 'x' }), /默认项目不能交接/);
 
   db.close();
@@ -299,7 +300,7 @@ test('交接的几种错法都要报人话', () => {
 test('归档：有未关闭子需求时拒绝，没有则成功，归档后不能再加需求', () => {
   const db = freshDb();
   const project = createProject(db, { name: '2026H1 版本' });
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev', projectId: project.id });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev', projectId: project.id });
 
   assert.throws(() => archiveProject(db, project.id), /还有 1 条未关闭的子需求/);
 
@@ -309,7 +310,7 @@ test('归档：有未关闭子需求时拒绝，没有则成功，归档后不�
 
   assert.throws(() => archiveProject(db, project.id), /已经归档/);
   assert.throws(
-    () => createItem(db, TEMPLATES, { title: '乙', role: 'dev', projectId: project.id }),
+    () => makeItem(db, TEMPLATES, { title: '乙', role: 'dev', projectId: project.id }),
     /已归档，不能再往里加需求/,
   );
 
@@ -354,7 +355,7 @@ test('项目类型只能是 delivery 或 caretaking', () => {
 test('看护项目下的流水线照常走 —— 触发时它就是一次普通开发', () => {
   const db = freshDb();
   const project = createProject(db, CARETAKING);
-  const item = createItem(db, TEMPLATES, { title: '平台C 量化', role: 'dev', projectId: project.id });
+  const item = makeItem(db, TEMPLATES, { title: '平台C 量化', role: 'dev', projectId: project.id });
 
   completeStageTodos(db, item.stages[0]!.id);
   const r = advanceStage(db, { itemId: item.item.id, stageId: item.stages[0]!.id });
@@ -388,8 +389,8 @@ test('项目列表可按类型和负责人过滤', () => {
 test('统计口径：未关闭子需求数与未解除阻塞数', () => {
   const db = freshDb();
   const project = createProject(db, CARETAKING);
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev', projectId: project.id });
-  const b = createItem(db, TEMPLATES, { title: '乙', role: 'dev', projectId: project.id });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev', projectId: project.id });
+  const b = makeItem(db, TEMPLATES, { title: '乙', role: 'dev', projectId: project.id });
 
   openBlocker(db, { itemId: a.item.id, direction: 'blocked_by_others', counterparty: 'x', need: 'y' });
   openBlocker(db, { itemId: b.item.id, direction: 'blocking_others', counterparty: 'p', need: 'q' });

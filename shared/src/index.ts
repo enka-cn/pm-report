@@ -6,7 +6,14 @@
  * 需要运行时常量请放到各自的包里（server/src/domain/constants.ts 等）。
  */
 
-export type Role = 'se' | 'dev' | 'test' | 'maint';
+/**
+ * 角色。
+ *
+ * 只有真的有流水线模板的角色才配留在这儿 —— 枚举里多一个没有模板的角色，
+ * 界面上就会多一个「选了必然报错」的选项（`test` 就这么被删掉的：
+ * 它是当初凭空列的，你问「test 角色是什么东西」正好说明它没有存在理由）。
+ */
+export type Role = 'se' | 'dev' | 'maint';
 
 /** 阶段类型：wait 类型的阶段进入时自动创建一条阻塞（D6） */
 export type StageKind = 'work' | 'review' | 'wait' | 'milestone';
@@ -55,6 +62,8 @@ export type EventType =
   | 'item_reopen'
   | 'ddl_change'
   | 'role_change'
+  /** 编号变更：预研转立项时补上真单号 —— 这是一件真实发生的事，要留在时间线上 */
+  | 'code_change'
   | 'note'
   | 'link_added'
   | 'link_removed'
@@ -90,7 +99,18 @@ export interface DropFileResult {
 
 export interface ProjectRow {
   id: number;
-  code: string;
+  /**
+   * 项目编号。**可以是 NULL** —— 预研/算法项目往往没有外部单号。
+   * 硬编一个 PRJ-6 等于凭空造一个你必须记住的映射，比没有标识更糟。
+   */
+  code: string | null;
+  /**
+   * 显示用的标识，由数据库虚拟生成：有编号就是「编号  名称」，没有就只是名称。
+   *
+   * 判断只写在 schema 里一处，前端直接用这个字段就行 —— 不要再自己拼 `code + name`，
+   * 那样每个地方都得记得处理 NULL，漏一处就会显示出 "null 模型量化"。
+   */
+  ref: string;
   name: string;
   description: string | null;
   due_at: string | null;
@@ -112,7 +132,10 @@ export interface ProjectRow {
 
 export interface ItemRow {
   id: number;
-  code: string;
+  /** 需求编号。**可以是 NULL**（见 ProjectRow.code 的说明）。 */
+  code: string | null;
+  /** 显示用的标识，数据库虚拟生成：有编号 =「编号  标题」，没有 = 标题。用这个，别自己拼 */
+  ref: string;
   project_id: number;
   title: string;
   description: string | null;
@@ -282,7 +305,9 @@ export type DashboardBucketKey =
 
 export interface DashboardCard {
   itemId: number;
-  code: string;
+  code: string | null;
+  /** 显示用标识，没编号时就是标题 */
+  ref: string;
   title: string;
   role: Role;
   condition: ItemCondition;
@@ -328,7 +353,8 @@ export interface GanttMilestone {
 
 export interface GanttBar {
   itemId: number;
-  code: string;
+  code: string | null;
+  ref: string;
   title: string;
   role: Role;
   condition: ItemCondition;
@@ -353,7 +379,7 @@ export interface GanttChart {
   ticks: { day: number; label: string; major: boolean }[];
   bars: GanttBar[];
   /** 没有 DDL、放不上时间轴的 */
-  withoutDdl: { itemId: number; code: string; title: string }[];
+  withoutDdl: { itemId: number; code: string | null; ref: string; title: string }[];
   /** 有 DDL 但远到超出窗口、没画出来的条数 */
   beyondWindow: number;
 }
@@ -433,7 +459,7 @@ export interface ProjectDetail {
 export interface HandoffResult {
   project: ProjectRow;
   /** 交接那一刻仍在途的子需求 */
-  pending_items: { code: string; title: string; current_stage: string | null }[];
+  pending_items: { code: string | null; ref: string; title: string; current_stage: string | null }[];
   open_blockers: number;
 }
 
@@ -465,7 +491,7 @@ export interface PaletteCandidate {
   /** 选中它时直接执行这条完整命令（比如把当前输入丢给全文检索） */
   run?: string;
   itemId?: number;
-  itemCode?: string;
+  itemCode?: string | null;
   command?: string;
 }
 

@@ -21,7 +21,6 @@ import type {
 export const ROLE_LABELS: Record<Role, string> = {
   se: 'SE',
   dev: '开发',
-  test: '测试',
   maint: '维护',
 };
 

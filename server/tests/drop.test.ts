@@ -17,7 +17,7 @@ import {
 } from '../src/domain/deliverables.ts';
 import { stageAdvanceBlockers } from '../src/domain/stages.ts';
 import { storeFile } from '../src/domain/storage.ts';
-import { freshDb, makeApp } from './helpers.ts';
+import { freshDb, makeApp , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -70,7 +70,7 @@ test('按扩展名猜类别，认不出来就归「其他」', () => {
 test('拖进来：名字从文件名来，类别按扩展名猜', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   const results = dropDeliverables(db, {
@@ -98,7 +98,7 @@ test('拖进来：名字从文件名来，类别按扩展名猜', () => {
 test('同名再拖一次 = 新版本，不是又建一条', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   dropDeliverables(db, { itemId: item.item.id, stageId: item.stages[0]!.id, files: [dropped('v1', '设计说明.md', dir)] });
   const second = dropDeliverables(db, {
@@ -119,7 +119,7 @@ test('同名再拖一次 = 新版本，不是又建一条', () => {
 test('内容一模一样就别造一个没有意义的 v2', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   dropDeliverables(db, { itemId: item.item.id, stageId, files: [dropped('同样的内容', '文档.md', dir)] });
@@ -139,7 +139,7 @@ test('内容一模一样就别造一个没有意义的 v2', () => {
 test('同名匹配忽略大小写和首尾空格', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   dropDeliverables(db, { itemId: item.item.id, stageId, files: [dropped('a', 'Design.md', dir)] });
@@ -158,7 +158,7 @@ test('同名匹配忽略大小写和首尾空格', () => {
 test('拖到「必交项」上，卡点就解了 —— 这才是拖拽最省事的地方', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   // 先手工建一条必交项（现在还没有上传任何东西）
@@ -196,7 +196,7 @@ test('拖到「必交项」上，卡点就解了 —— 这才是拖拽最省事
 test('一个文件失败不拖累整批', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   const results = dropDeliverables(db, {
     itemId: item.item.id,
@@ -234,7 +234,7 @@ test('需求不存在时直接报错，而不是悄悄什么都不做', () => {
 test('改类别不动必交项；改必交不动类别', () => {
   const db = freshDb();
   const dir = freshFilesDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const created = addDeliverable(db, {
     itemId: item.item.id,
     stageId: item.stages[0]!.id,

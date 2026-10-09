@@ -103,6 +103,8 @@ export const api = {
   createItem: (body: {
     title: string;
     role: Role;
+    /** 编号可选。留空就是没有编号 —— 预研/算法项目本来就没有单号 */
+    code?: string | null;
     description?: string | null;
     criticality?: number;
     dueAt?: string | null;
@@ -262,6 +264,19 @@ export const api = {
   restoreDeliverable: (deliverableId: number) =>
     request<{ ok: true }>(`/api/deliverables/${deliverableId}/restore`, { method: 'POST' }),
 
+  /** 补 / 改编号。预研转立项时用；留空就是取消编号。会写一条 code_change 事件 */
+  setItemCode: (itemId: number, code: string | null) =>
+    request<{ ok: true }>(`/api/items/${itemId}/code`, {
+      method: 'PATCH',
+      body: JSON.stringify({ code }),
+    }),
+
+  setProjectCode: (projectId: number, code: string | null) =>
+    request<{ ok: true }>(`/api/projects/${projectId}/code`, {
+      method: 'PATCH',
+      body: JSON.stringify({ code }),
+    }),
+
   storageUsage: () => request<StorageUsage>('/api/storage'),
 
   /** 回收磁盘：删掉没有任何在册交付物引用的字节 */
@@ -380,6 +395,8 @@ export const api = {
 
   createProject: (body: {
     name: string;
+    /** 编号可选 */
+    code?: string | null;
     kind?: ProjectKind;
     description?: string | null;
     watchFor?: string | null;

@@ -11,7 +11,7 @@ import { createFolder, folderTree, listFolders, moveDeliverable } from '../src/d
 import { batchDeliverables } from '../src/domain/batch.ts';
 import { listTimeline } from '../src/domain/events.ts';
 import { storeFile } from '../src/domain/storage.ts';
-import { freshDb, makeApp } from './helpers.ts';
+import { freshDb, makeApp , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -28,7 +28,7 @@ function fileIn(text: string, filename: string, dir = fs.mkdtempSync(path.join(o
 
 /** 造一条需求 + N 个交付物，返回它们的 id */
 function seed(db: ReturnType<typeof freshDb>, count: number) {
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const ids: number[] = [];
   for (let i = 0; i < count; i++) {
     const info = db
@@ -120,7 +120,7 @@ test('批量移动：目标文件夹不存在时，动数据之前就报错', ()
 test('批量移动：一个跨需求就整批回滚 —— 半截生效比失败更糟', () => {
   const db = freshDb();
   const a = seed(db, 2);
-  const b = createItem(db, TEMPLATES, { title: '乙', role: 'dev' });
+  const b = makeItem(db, TEMPLATES, { title: '乙', role: 'dev' });
   const foreign = createFolder(db, { itemId: b.item.id, name: '别人的文件夹' });
 
   // 先都放在根目录，再试图把它们移到「别人的文件夹」
@@ -188,7 +188,7 @@ test('批量：参数不合法要说人话', () => {
 
 test('批量移动不影响阶段 —— 两个轴互不干涉', () => {
   const db = freshDb();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   const ids = [1, 2].map((i) => {

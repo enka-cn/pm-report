@@ -1,10 +1,16 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { DashboardBucketKey, DashboardCard, DashboardSection } from '@manager/shared';
+import type {
+  DashboardBucketKey,
+  DashboardCard,
+  DashboardSection,
+  ItemDetail,
+  PipelineTemplate,
+} from '@manager/shared';
 import { all, openDb, type Db } from '../src/db/index.ts';
 import { migrate } from '../src/db/migrate.ts';
-import { getItem } from '../src/domain/items.ts';
+import { createItem, getItem, type CreateItemInput } from '../src/domain/items.ts';
 import { advanceStage, setTodoDone } from '../src/domain/stages.ts';
 import { loadPipelines } from '../src/domain/pipeline.ts';
 import { todayIso } from '../src/domain/dates.ts';
@@ -66,5 +72,35 @@ export function cardsOf(sections: DashboardSection[], key: DashboardBucketKey): 
 }
 
 export function codesOf(sections: DashboardSection[], key: DashboardBucketKey): string[] {
-  return cardsOf(sections, key).map((c) => c.code);
+  // 测试里建的需求都有自动编号。用占位符而不是 null，这样万一混进一个没编号的，
+  // 断言失败时看到的是「(无编号)」而不是一个让人摸不着头脑的 null。
+  return cardsOf(sections, key).map((c) => c.code ?? '(无编号)');
+}
+
+/** 卡片/列表里这个需求的编号显示值。没编号就是占位符（见 codesOf 的说明） */
+export function codeOf(x: { code: string | null }): string {
+  return x.code ?? '(无编号)';
+}
+
+// ---------------------------------------------------------------------------
+// 建需求
+// ---------------------------------------------------------------------------
+
+let itemSeq = 0;
+
+/**
+ * 建一条需求，**默认给一个编号**。
+ *
+ * 真实使用里编号是可选的（预研/算法项目没有单号），但测试里大多关心编号 ——
+ * 断言、命令面板跳转、列表对照全靠它。所以这里默认塞一个 `T-n`。
+ *
+ * 显式传 `code` 就用传的，**包括显式传 `null`** 来测「没有编号」的场景
+ * （对象展开的顺序保证了这一点）。
+ */
+export function makeItem(
+  db: Db,
+  templates: PipelineTemplate[],
+  input: CreateItemInput,
+): ItemDetail {
+  return createItem(db, templates, { code: `T-${++itemSeq}`, ...input });
 }

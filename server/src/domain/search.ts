@@ -183,9 +183,12 @@ export function rebuildSearchIndex(db: Db): number {
   run(db, 'DELETE FROM search_fts');
 
   const statements = [
+    // 用 ref，不要用 `code || ' ' || title` —— SQLite 里 NULL || ' ' 还是 NULL，
+    // 没编号的东西会整条索引变成空，也就是**搜不到**（这种 bug 不报错，只是悄悄找不到）。
+    // 增量触发器用的也是 ref，两边必须一致，否则重建一次索引结果就变了。
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
      SELECT 100000000 + id, 'item', id, id, project_id, updated_at,
-            code || ' ' || title, IFNULL(description, '') FROM item`,
+            ref, IFNULL(description, '') FROM item`,
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
      SELECT 200000000 + id, 'note', id, item_id,
             COALESCE(project_id, (SELECT project_id FROM item WHERE id = event.item_id)),
@@ -203,7 +206,7 @@ export function rebuildSearchIndex(db: Db): number {
             (SELECT project_id FROM item WHERE id = deliverable.item_id), updated_at, '', name
        FROM deliverable WHERE removed_at IS NULL`,
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)
-     SELECT 600000000 + id, 'project', id, NULL, id, updated_at, code || ' ' || name,
+     SELECT 600000000 + id, 'project', id, NULL, id, updated_at, ref,
             IFNULL(description, '') || IFNULL(' ' || watch_for, '')
        FROM project WHERE is_default = 0`,
     `INSERT INTO search_fts(rowid, kind, ref_id, item_id, project_id, occurred_at, title, body)

@@ -6,7 +6,7 @@ import { computeDashboard, computeDashboardPayload, dashboardSummary } from '../
 import { daysBetween } from '../src/domain/dates.ts';
 import { closeItem, createItem, suspendItem } from '../src/domain/items.ts';
 import { openBlocker } from '../src/domain/stages.ts';
-import { REAL_TODAY, advanceUntil, cardsOf, codesOf, freshDb, shift } from './helpers.ts';
+import { REAL_TODAY, advanceUntil, cardsOf, codeOf, codesOf, freshDb, shift , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 const T = { today: REAL_TODAY };
@@ -26,10 +26,10 @@ test('空库返回全部 7 个桶，且都是空的', () => {
 
 test('到期桶：逾期 / 3 日内 / 还早 / 无 DDL 各归各位', () => {
   const db = freshDb();
-  const overdue = createItem(db, TEMPLATES, { title: '逾期项', role: 'dev', dueAt: shift(REAL_TODAY, -5) });
-  const soon = createItem(db, TEMPLATES, { title: '临期项', role: 'dev', dueAt: shift(REAL_TODAY, 2) });
-  const later = createItem(db, TEMPLATES, { title: '还早', role: 'dev', dueAt: shift(REAL_TODAY, 30) });
-  const none = createItem(db, TEMPLATES, { title: '无 DDL', role: 'dev' });
+  const overdue = makeItem(db, TEMPLATES, { title: '逾期项', role: 'dev', dueAt: shift(REAL_TODAY, -5) });
+  const soon = makeItem(db, TEMPLATES, { title: '临期项', role: 'dev', dueAt: shift(REAL_TODAY, 2) });
+  const later = makeItem(db, TEMPLATES, { title: '还早', role: 'dev', dueAt: shift(REAL_TODAY, 30) });
+  const none = makeItem(db, TEMPLATES, { title: '无 DDL', role: 'dev' });
 
   const s = computeDashboard(db, T);
 
@@ -40,7 +40,7 @@ test('到期桶：逾期 / 3 日内 / 还早 / 无 DDL 各归各位', () => {
   assert.deepEqual(codesOf(s, 'due_soon'), [soon.item.code]);
   assert.equal(cardsOf(s, 'due_soon')[0]!.reason, '还有 2 天到期');
 
-  assert.equal(codesOf(s, 'overdue').includes(later.item.code), false);
+  assert.equal(codesOf(s, 'overdue').includes(codeOf(later.item)), false);
   // 「无 DDL」是安全网：没有 DDL 的需求不会自己浮上来，必须单独列
   assert.deepEqual(codesOf(s, 'no_ddl'), [none.item.code]);
   assert.equal(cardsOf(s, 'no_ddl')[0]!.reason, '没有设置任何 DDL');
@@ -50,7 +50,7 @@ test('到期桶：逾期 / 3 日内 / 还早 / 无 DDL 各归各位', () => {
 
 test('到期当天算「今天到期」，不算逾期', () => {
   const db = freshDb();
-  const today = createItem(db, TEMPLATES, { title: '今天到', role: 'dev', dueAt: REAL_TODAY });
+  const today = makeItem(db, TEMPLATES, { title: '今天到', role: 'dev', dueAt: REAL_TODAY });
   const s = computeDashboard(db, T);
 
   assert.deepEqual(codesOf(s, 'overdue'), []);
@@ -63,10 +63,10 @@ test('到期当天算「今天到期」，不算逾期', () => {
 
 test('阻塞两个方向分开成桶，且说清在等谁、等什么', () => {
   const db = freshDb();
-  const blocked = createItem(db, TEMPLATES, { title: '等测试报告', role: 'dev' });
+  const blocked = makeItem(db, TEMPLATES, { title: '等测试报告', role: 'dev' });
   advanceUntil(db, blocked.item.id, 'wait_test_report');
 
-  const blocking = createItem(db, TEMPLATES, { title: '别人在等我', role: 'dev' });
+  const blocking = makeItem(db, TEMPLATES, { title: '别人在等我', role: 'dev' });
   openBlocker(db, {
     itemId: blocking.item.id,
     direction: 'blocking_others',
@@ -91,8 +91,8 @@ test('阻塞两个方向分开成桶，且说清在等谁、等什么', () => {
 
 test('承诺时间已过的阻塞排在前面，即使等待天数相同', () => {
   const db = freshDb();
-  const late = createItem(db, TEMPLATES, { title: '承诺过期', role: 'dev' });
-  const nopromise = createItem(db, TEMPLATES, { title: '没承诺', role: 'dev' });
+  const late = makeItem(db, TEMPLATES, { title: '承诺过期', role: 'dev' });
+  const nopromise = makeItem(db, TEMPLATES, { title: '没承诺', role: 'dev' });
 
   openBlocker(db, {
     itemId: late.item.id,
@@ -117,24 +117,24 @@ test('承诺时间已过的阻塞排在前面，即使等待天数相同', () =>
 
 test('同一需求可以同时出现在多个桶里', () => {
   const db = freshDb();
-  const it = createItem(db, TEMPLATES, { title: '又逾期又被卡', role: 'dev', dueAt: shift(REAL_TODAY, -3) });
+  const it = makeItem(db, TEMPLATES, { title: '又逾期又被卡', role: 'dev', dueAt: shift(REAL_TODAY, -3) });
   advanceUntil(db, it.item.id, 'wait_test_report');
 
   const s = computeDashboard(db, T);
-  assert.ok(codesOf(s, 'overdue').includes(it.item.code), '应在逾期桶');
-  assert.ok(codesOf(s, 'blocked_by_others').includes(it.item.code), '应同时在被阻塞桶');
+  assert.ok(codesOf(s, 'overdue').includes(codeOf(it.item)), '应在逾期桶');
+  assert.ok(codesOf(s, 'blocked_by_others').includes(codeOf(it.item)), '应同时在被阻塞桶');
 
   db.close();
 });
 
 test('挂起是「别催我」开关：退出逾期桶，但单独列出并标注挂起时已逾期多久', () => {
   const db = freshDb();
-  const it = createItem(db, TEMPLATES, { title: '挂起项', role: 'dev', dueAt: shift(REAL_TODAY, -10) });
+  const it = makeItem(db, TEMPLATES, { title: '挂起项', role: 'dev', dueAt: shift(REAL_TODAY, -10) });
   suspendItem(db, it.item.id, '人力被抽走');
 
   const s = computeDashboard(db, T);
 
-  assert.equal(codesOf(s, 'overdue').includes(it.item.code), false, '挂起项应退出逾期桶');
+  assert.equal(codesOf(s, 'overdue').includes(codeOf(it.item)), false, '挂起项应退出逾期桶');
   assert.deepEqual(codesOf(s, 'suspended'), [it.item.code]);
 
   const card = cardsOf(s, 'suspended')[0]!;
@@ -148,7 +148,7 @@ test('挂起是「别催我」开关：退出逾期桶，但单独列出并标�
 
 test('停滞桶：按距最近一次事件的天数判定', () => {
   const db = freshDb();
-  const it = createItem(db, TEMPLATES, { title: '久未动', role: 'dev', dueAt: shift(REAL_TODAY, 60) });
+  const it = makeItem(db, TEMPLATES, { title: '久未动', role: 'dev', dueAt: shift(REAL_TODAY, 60) });
 
   assert.deepEqual(codesOf(computeDashboard(db, T), 'stale'), [], '刚建的需求不该算停滞');
 
@@ -162,7 +162,7 @@ test('停滞桶：按距最近一次事件的天数判定', () => {
 
 test('已关闭的需求不出现在任何桶里', () => {
   const db = freshDb();
-  const it = createItem(db, TEMPLATES, { title: '关掉的', role: 'dev', dueAt: shift(REAL_TODAY, -20) });
+  const it = makeItem(db, TEMPLATES, { title: '关掉的', role: 'dev', dueAt: shift(REAL_TODAY, -20) });
   closeItem(db, it.item.id, { reason: 'cancelled' });
 
   const s = computeDashboard(db, T);
@@ -174,8 +174,8 @@ test('已关闭的需求不出现在任何桶里', () => {
 
 test('手动置顶/置底永远覆盖自动排序', () => {
   const db = freshDb();
-  const a = createItem(db, TEMPLATES, { title: '甲', role: 'dev', dueAt: shift(REAL_TODAY, -1) });
-  const b = createItem(db, TEMPLATES, { title: '乙', role: 'dev', dueAt: shift(REAL_TODAY, -9) });
+  const a = makeItem(db, TEMPLATES, { title: '甲', role: 'dev', dueAt: shift(REAL_TODAY, -1) });
+  const b = makeItem(db, TEMPLATES, { title: '乙', role: 'dev', dueAt: shift(REAL_TODAY, -9) });
 
   // 默认按超期天数：逾期更久的乙在前
   assert.deepEqual(codesOf(computeDashboard(db, T), 'overdue'), [b.item.code, a.item.code]);
@@ -195,13 +195,13 @@ test('手动置顶/置底永远覆盖自动排序', () => {
 
 test('打分公式：越临近 DDL、越关键，分越高', () => {
   const db = freshDb();
-  const urgent = createItem(db, TEMPLATES, {
+  const urgent = makeItem(db, TEMPLATES, {
     title: '明天到期',
     role: 'dev',
     dueAt: shift(REAL_TODAY, 1),
     criticality: 5,
   });
-  const relaxed = createItem(db, TEMPLATES, {
+  const relaxed = makeItem(db, TEMPLATES, {
     title: '下月到期',
     role: 'dev',
     dueAt: shift(REAL_TODAY, 30),
@@ -228,8 +228,8 @@ test('打分公式：越临近 DDL、越关键，分越高', () => {
 
 test('摘要数字与各桶数量一致', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '逾期', role: 'dev', dueAt: shift(REAL_TODAY, -2) });
-  createItem(db, TEMPLATES, { title: '无 DDL', role: 'dev' });
+  makeItem(db, TEMPLATES, { title: '逾期', role: 'dev', dueAt: shift(REAL_TODAY, -2) });
+  makeItem(db, TEMPLATES, { title: '无 DDL', role: 'dev' });
 
   const s = computeDashboard(db, T);
   const summary = dashboardSummary(s);
@@ -247,7 +247,7 @@ test('摘要数字与各桶数量一致', () => {
 test('焦点列表各截前 3 条，最紧急的在最前', () => {
   const db = freshDb();
   const items = [5, 4, 3, 2].map((days, i) =>
-    createItem(db, TEMPLATES, {
+    makeItem(db, TEMPLATES, {
       title: `逾期 ${days} 天`,
       role: 'dev',
       dueAt: shift(REAL_TODAY, -days),
@@ -266,13 +266,13 @@ test('焦点列表各截前 3 条，最紧急的在最前', () => {
 
 test('三条焦点列表各管一类：最紧要 / 别人等我 / 我等别人', () => {
   const db = freshDb();
-  const urgentOnly = createItem(db, TEMPLATES, {
+  const urgentOnly = makeItem(db, TEMPLATES, {
     title: '只是紧急',
     role: 'dev',
     dueAt: shift(REAL_TODAY, 1),
   });
-  const blocking = createItem(db, TEMPLATES, { title: '别人等我', role: 'dev' });
-  const blocked = createItem(db, TEMPLATES, { title: '我等别人', role: 'dev' });
+  const blocking = makeItem(db, TEMPLATES, { title: '别人等我', role: 'dev' });
+  const blocked = makeItem(db, TEMPLATES, { title: '我等别人', role: 'dev' });
 
   openBlocker(db, {
     itemId: blocking.item.id,
@@ -313,7 +313,7 @@ test('三条焦点列表各管一类：最紧要 / 别人等我 / 我等别人',
 
 test('挂起的需求不进焦点列表', () => {
   const db = freshDb();
-  const it = createItem(db, TEMPLATES, { title: '挂起的', role: 'dev', dueAt: shift(REAL_TODAY, -9) });
+  const it = makeItem(db, TEMPLATES, { title: '挂起的', role: 'dev', dueAt: shift(REAL_TODAY, -9) });
   suspendItem(db, it.item.id, '人力被抽走');
 
   const { focus } = computeDashboardPayload(db, T);
@@ -326,9 +326,9 @@ test('挂起的需求不进焦点列表', () => {
 
 test('甘特图：窗口、逾期段、阶段里程碑、无 DDL 的单独列出', () => {
   const db = freshDb();
-  const soon = createItem(db, TEMPLATES, { title: '快到期', role: 'dev', dueAt: shift(REAL_TODAY, 4) });
-  const late = createItem(db, TEMPLATES, { title: '已逾期', role: 'dev', dueAt: shift(REAL_TODAY, -6) });
-  const none = createItem(db, TEMPLATES, { title: '没 DDL', role: 'dev' });
+  const soon = makeItem(db, TEMPLATES, { title: '快到期', role: 'dev', dueAt: shift(REAL_TODAY, 4) });
+  const late = makeItem(db, TEMPLATES, { title: '已逾期', role: 'dev', dueAt: shift(REAL_TODAY, -6) });
+  const none = makeItem(db, TEMPLATES, { title: '没 DDL', role: 'dev' });
 
   // 给「已逾期」的第二个阶段设一个阶段 DDL，它应该在图上成为一个里程碑
   run(
@@ -371,13 +371,13 @@ test('甘特图：窗口、逾期段、阶段里程碑、无 DDL 的单独列出
 test('甘特图：挂起的排在最后，不占「先动哪个」的头几行', () => {
   const db = freshDb();
   // 挂起的那条逾期最久，按纯时间排序它本该排第一
-  const suspended = createItem(db, TEMPLATES, {
+  const suspended = makeItem(db, TEMPLATES, {
     title: '挂起的',
     role: 'dev',
     dueAt: shift(REAL_TODAY, -30),
   });
   suspendItem(db, suspended.item.id, '搁置');
-  const normal = createItem(db, TEMPLATES, {
+  const normal = makeItem(db, TEMPLATES, {
     title: '正常的',
     role: 'dev',
     dueAt: shift(REAL_TODAY, 5),
@@ -393,8 +393,8 @@ test('甘特图：挂起的排在最后，不占「先动哪个」的头几行',
 
 test('甘特图：DDL 太远的不画出来，但会报个数', () => {
   const db = freshDb();
-  createItem(db, TEMPLATES, { title: '近的', role: 'dev', dueAt: shift(REAL_TODAY, 5) });
-  createItem(db, TEMPLATES, { title: '很远的', role: 'dev', dueAt: shift(REAL_TODAY, 200) });
+  makeItem(db, TEMPLATES, { title: '近的', role: 'dev', dueAt: shift(REAL_TODAY, 5) });
+  makeItem(db, TEMPLATES, { title: '很远的', role: 'dev', dueAt: shift(REAL_TODAY, 200) });
 
   const { gantt } = computeDashboardPayload(db, T);
   assert.equal(gantt.bars.length, 1, '200 天后的那条超出窗口');

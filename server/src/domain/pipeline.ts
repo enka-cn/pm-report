@@ -4,7 +4,7 @@ import { parse as parseYaml } from 'yaml';
 import type { PipelineStageDef, PipelineTemplate, Role, StageKind } from '@manager/shared';
 import { PIPELINES_DIR } from '../config.ts';
 
-const VALID_ROLES: readonly Role[] = ['se', 'dev', 'test', 'maint'];
+const VALID_ROLES: readonly Role[] = ['se', 'dev', 'maint'];
 const VALID_KINDS: readonly StageKind[] = ['work', 'review', 'wait', 'milestone'];
 
 export class PipelineError extends Error {}

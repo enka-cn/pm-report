@@ -99,7 +99,7 @@ function CaretakingBlock({ projects }: { projects: ProjectSummary[] }) {
               onClick={() => navigate({ name: 'projects', projectId: p.id })}
               className="flex w-full flex-wrap items-center gap-2 px-3 py-2 text-left hover:bg-zinc-800/50"
             >
-              <span className="font-mono text-[11px] text-zinc-500">{p.code}</span>
+              {p.code && <span className="font-mono text-[11px] text-zinc-500">{p.code}</span>}
               <span className="text-sm text-zinc-100">{p.name}</span>
 
               {p.pending_handoff ? (
@@ -223,7 +223,7 @@ function FocusPanel({
               >
                 <div className="flex items-center gap-2">
                   {c.pinned === 'top' && <span className="text-[10px] text-amber-300">置顶</span>}
-                  <span className="font-mono text-[11px] text-zinc-500">{c.code}</span>
+                  {c.code && <span className="font-mono text-[11px] text-zinc-500">{c.code}</span>}
                   <span className="truncate text-xs text-zinc-100">{c.title}</span>
                   <span className="ml-auto shrink-0">
                     <ConditionBadge condition={c.condition} />
@@ -313,7 +313,7 @@ function GanttView({ chart }: { chart: GanttChart }) {
                 onClick={() => goItem(w.itemId)}
                 className="ml-2 text-sky-400 hover:text-sky-300"
               >
-                {w.code} {w.title}
+                {w.ref}
               </button>
             ))}
           </div>
@@ -349,10 +349,10 @@ function GanttRow({
       <button
         type="button"
         onClick={() => goItem(bar.itemId)}
-        title={`${bar.code} ${bar.title}`}
+        title={bar.ref}
         className="w-56 shrink-0 truncate pr-2 text-left text-[11px] text-zinc-300 hover:text-zinc-100"
       >
-        <span className="font-mono text-zinc-500">{bar.code}</span> {bar.title}
+        {bar.code && <span className="font-mono text-zinc-500">{bar.code}</span>} {bar.title}
       </button>
 
       <div className="relative h-6 flex-1">
@@ -428,7 +428,7 @@ function Section({ section }: { section: DashboardSection }) {
               <div className="flex items-center gap-2">
                 {card.pinned === 'top' && <span className="text-xs text-amber-300">置顶</span>}
                 {card.pinned === 'bottom' && <span className="text-xs text-zinc-500">置底</span>}
-                <span className="font-mono text-xs text-zinc-500">{card.code}</span>
+                {card.code && <span className="font-mono text-xs text-zinc-500">{card.code}</span>}
                 <span className="truncate text-zinc-100">{card.title}</span>
               </div>
               <div className="mt-0.5 flex items-center gap-2 text-xs text-zinc-400">

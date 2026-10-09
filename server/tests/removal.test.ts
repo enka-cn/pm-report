@@ -22,7 +22,7 @@ import { stageAdvanceBlockers } from '../src/domain/stages.ts';
 import { rebuildSearchIndex, search } from '../src/domain/search.ts';
 import { humanSize, listStoredFiles, storeFile } from '../src/domain/storage.ts';
 import { listTimeline } from '../src/domain/events.ts';
-import { freshDb, makeApp } from './helpers.ts';
+import { freshDb, makeApp , makeItem } from './helpers.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -48,7 +48,7 @@ function fileFrom(text: string, filename: string, dir: string) {
 test('移除之后，从每一个界面都消失', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
   const folder = createFolder(db, { itemId: item.item.id, name: 'assets' });
 
@@ -91,7 +91,7 @@ test('移除之后，从每一个界面都消失', () => {
 test('移除必交项之后，阶段卡点不该再拦着', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   // 手工建一条「必交但没上传」的
@@ -119,7 +119,7 @@ test('移除必交项之后，阶段卡点不该再拦着', () => {
 test('移除是可逆的', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const d = addDeliverable(db, {
     itemId: item.item.id,
     stageId: item.stages[0]!.id,
@@ -148,7 +148,7 @@ test('移除是可逆的', () => {
 test('回收：删掉已移除交付物的字节，并报告释放了多少', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   // 模拟一个「大文件」：这里用 200KB 的文本，重点是逻辑不是字节数
   const big = 'x'.repeat(200 * 1024);
@@ -189,7 +189,7 @@ test('回收：删掉已移除交付物的字节，并报告释放了多少', ()
 test('回收：同一份内容还被别人引用时，字节要留着', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const stageId = item.stages[0]!.id;
 
   // 内容寻址：两份「不同名字、同样内容」的文件共用一个 blob
@@ -218,7 +218,7 @@ test('回收：同一份内容还被别人引用时，字节要留着', () => {
 test('回收：不碰在册交付物的文件，也不碰没被引用的孤儿文件之外的正常文件', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
 
   dropDeliverables(db, {
     itemId: item.item.id,
@@ -263,7 +263,7 @@ test('回收：孤儿文件（上传中途失败留下的）也会被清掉', ()
 test('重建索引也要把移除的排除掉', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const d = addDeliverable(db, {
     itemId: item.item.id,
     stageId: item.stages[0]!.id,
@@ -410,7 +410,7 @@ test('HTTP：删除不存在的交付物报人话', async () => {
 test('移除的交付物不会在文件夹树里留下空壳计数', () => {
   const db = freshDb();
   const dir = tempDir();
-  const item = createItem(db, TEMPLATES, { title: '甲', role: 'dev' });
+  const item = makeItem(db, TEMPLATES, { title: '甲', role: 'dev' });
   const folder = createFolder(db, { itemId: item.item.id, name: 'assets' });
 
   const d = addDeliverable(db, {
