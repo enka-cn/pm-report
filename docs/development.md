@@ -41,12 +41,32 @@
 **搜索索引也必须用 `ref`**：`NULL || ' '` 在 SQLite 里还是 `NULL`，用了 `code || ' ' || title`
 的话没编号的东西整条索引变空 —— 不报错，只是搜不到。
 
-## SQLite 版本要求
+## SQLite 版本要求：3.53+
 
 迁移 007 用了 `ALTER TABLE ... ALTER COLUMN ... DROP NOT NULL`，**这是 SQLite 3.53 才有的能力**。
-`package.json` 已经锁了 Node 24（自带 3.53.4），但如果哪天换回老版本，**迁移会直接失败**而不是
-静默降级 —— 那就得改写「建新表 → 拷 → 删旧 → 改名」的重建流程，而 `item` 被 7 张表 + 视图 +
-触发器引用，是最危险的一类迁移。
+老版本没有它，只能走「建新表 → 拷 → 删旧 → 改名」的重建流程 —— 而 `item` 被 7 张表 + `v_item` 视图 +
+一堆 FTS 触发器引用，是整个项目里最危险的一类迁移。
+
+**关键：Node 自带的 SQLite 版本随发布而变，和 Node 版本号没有对应关系。**
+
+| Node | SQLite | 行不行 |
+|---|---|---|
+| 22.22.0 | 3.50.4 | ✗ |
+| 22.23.3（22.x 最新） | 3.51.3 | ✗ |
+| 24.21.0 | 3.53.4 | ✓ |
+
+所以「我装的是 Node 24」不等于「SQLite 够新」。**Node 22 全线都不够**（实测过：拿真的
+node-v22.22.0 跑测试套件，死在 `迁移 007 失败: near "ALTER": syntax error`）。
+
+`openDb()` / `openMemoryDb()` 里有一道守卫（`assertSqliteVersion`），在**跑迁移之前**就检查
+`sqlite_version()`，不够就抛一句带升级路径的人话 —— 不然用户看到的是
+`near "ALTER": syntax error`，从这句话里根本看不出是版本问题。
+
+守卫的「太旧」分支在够新的机器上永远不会自己触发，所以拆成了可测的纯函数
+（`parseSqliteVersion` / `sqliteIsTooOld` / `assertSqliteVersion` 收结构类型参数，测试塞假连接），
+见 `server/tests/sqlite-version.test.ts`。
+
+> 顺带一个字符串比较的坑：`'3.9.9' > '3.53.0'` 按字符串比是成立的，所以版本比较必须逐段按数字来。
 
 ## 事务不支持嵌套，所以有 `*InTx`
 
