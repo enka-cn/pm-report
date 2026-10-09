@@ -10,7 +10,13 @@ import type {
   SearchKind,
 } from '@manager/shared';
 import type { Db } from './db/index.ts';
-import { FILES_DIR, WEB_DIST, loadSettings } from './config.ts';
+import { FILES_DIR, PIPELINES_DIR, WEB_DIST, loadSettings } from './config.ts';
+import {
+  deleteTemplate,
+  loadPipelines,
+  saveTemplate,
+  validateTemplate,
+} from './domain/pipeline.ts';
 import {
   closeItem,
   createItem,
@@ -148,10 +154,28 @@ async function readJson(c: Context): Promise<Record<string, unknown>> {
 export interface AppOptions {
   /** 附件落盘目录。测试传临时目录，免得污染真实 data/files。 */
   filesDir?: string;
+  /**
+   * 流水线模板目录。测试传临时目录，免得把仓库里的 `config/pipelines` 改掉。
+   */
+  pipelinesDir?: string;
 }
 
 export function createApp(db: Db, templates: PipelineTemplate[], options: AppOptions = {}) {
   const filesDir = options.filesDir ?? FILES_DIR;
+  const pipelinesDir = options.pipelinesDir ?? PIPELINES_DIR;
+
+  /**
+   * 当前生效的模板。
+   *
+   * 不用参数本身，因为**界面上能改模板**：改完文件之后，这个闭包里那份就过期了。
+   * 所以持有一个可变引用，写完文件重新载入一次，改动立刻生效（不用重启服务）。
+   */
+  let current = templates;
+  const reloadTemplates = (): PipelineTemplate[] => {
+    current = loadPipelines(pipelinesDir);
+    return current;
+  };
+
   const app = new Hono();
 
   // 服务层抛出的都是面向用户的中文说明，本地单人工具直接透出即可
@@ -160,11 +184,40 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
   app.get('/api/health', (c) =>
     c.json({
       ok: true,
-      pipelines: templates.map((t) => ({ key: t.key, name: t.name, role: t.role, stages: t.stages.length })),
+      pipelines: current.map((t) => ({ key: t.key, name: t.name, role: t.role, stages: t.stages.length })),
     }),
   );
 
-  app.get('/api/pipelines', (c) => c.json({ pipelines: templates }));
+  app.get('/api/pipelines', (c) => c.json({ pipelines: current }));
+
+  /**
+   * 新建 / 修改一条流水线模板。
+   *
+   * 模板的真相源始终是 `config/pipelines/*.yaml` —— 这里只是把它当成一个可编辑的文件，
+   * 不往数据库里放第二份。写完重新载入，改动立刻生效（不用重启）。
+   *
+   * **key 以 URL 为准**，body 里的 key 会被忽略：key 就是文件名，还出现在事件 payload 里，
+   * 改它等于换了身份。想换就新建一条。
+   */
+  app.put('/api/pipelines/:key', async (c) => {
+    const key = c.req.param('key');
+    const body = await readJson(c);
+
+    const template = validateTemplate({ ...body, key }, `${key}.yaml`);
+    saveTemplate(pipelinesDir, template);
+    return c.json({ pipelines: reloadTemplates(), key: template.key });
+  });
+
+  /**
+   * 删掉一条模板。
+   *
+   * 允许删掉某个角色的最后一条 —— 那样只是「以后新建不了这种角色的需求」，
+   * 是合理的收尾动作（某类工作不做了）。界面上的确认弹窗会说清这一点。
+   */
+  app.delete('/api/pipelines/:key', (c) => {
+    deleteTemplate(pipelinesDir, c.req.param('key'));
+    return c.json({ pipelines: reloadTemplates() });
+  });
 
   /** 前端要用的中文标签等元信息，避免前后端各写一份然后漂移 */
   app.get('/api/meta', (c) =>
@@ -209,7 +262,7 @@ export function createApp(db: Db, templates: PipelineTemplate[], options: AppOpt
 
   app.post('/api/items', async (c) => {
     const body = await readJson(c);
-    const detail = createItem(db, templates, {
+    const detail = createItem(db, current, {
       title: asString(body['title'], 'title')!,
       role: asString(body['role'], 'role') as Role,
       // 编号可选：不传就是没有（预研/算法项目本来就没有单号）

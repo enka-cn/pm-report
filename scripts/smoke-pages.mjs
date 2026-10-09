@@ -39,7 +39,7 @@ function findBrowser() {
  * 这样换一台机器、换一份数据也能跑。
  */
 async function routesToVisit() {
-  const routes = ['#/', '#/items', '#/search', '#/search/鉴权', '#/projects', '#/reports'];
+  const routes = ['#/', '#/items', '#/search', '#/search/鉴权', '#/projects', '#/reports', '#/pipelines'];
   try {
     const items = await (await fetch(`${BASE}/api/items?includeClosed=true`)).json();
     if (items.items?.[0]) {

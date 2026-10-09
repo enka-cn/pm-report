@@ -15,6 +15,7 @@ import { advanceStage, setTodoDone } from '../src/domain/stages.ts';
 import { loadPipelines } from '../src/domain/pipeline.ts';
 import { todayIso } from '../src/domain/dates.ts';
 import { createApp } from '../src/app.ts';
+import { PIPELINES_DIR } from '../src/config.ts';
 
 const TEMPLATES = loadPipelines();
 
@@ -25,7 +26,15 @@ const TEMPLATES = loadPipelines();
 export function makeApp() {
   const db = freshDb();
   const filesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'manager-api-files-'));
-  return { db, filesDir, app: createApp(db, TEMPLATES, { filesDir }) };
+
+  // 每个测试一份模板目录的副本。**这一步是必须的**：流水线能在界面上改，
+  // 不隔开的话跑一次测试就把仓库里的 config/pipelines 改掉了。
+  const pipelinesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'manager-api-pipelines-'));
+  for (const name of fs.readdirSync(PIPELINES_DIR)) {
+    fs.copyFileSync(path.join(PIPELINES_DIR, name), path.join(pipelinesDir, name));
+  }
+
+  return { db, filesDir, pipelinesDir, app: createApp(db, TEMPLATES, { filesDir, pipelinesDir }) };
 }
 
 /** 真实今天（本地时区）。驾驶舱测试用它作为基准，避免依赖硬编码日期。 */

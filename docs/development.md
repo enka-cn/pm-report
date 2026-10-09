@@ -117,11 +117,16 @@ pnpm typecheck    # shared / server / web 三处类型检查
 
 ```powershell
 $env:MANAGER_DATA_DIR = 'C:\codes\manager\.scratch-data'
+$env:MANAGER_PIPELINES_DIR = 'C:\codes\manager\.scratch-pipelines'   # 要试流水线定制页时才需要
 $env:PORT = '5179'
 pnpm start
 ```
 
-`MANAGER_DATA_DIR` 和 `PORT` 都支持环境变量覆盖，`.scratch-data/` 已在 `.gitignore` 里。
+三个都支持环境变量覆盖，`.scratch-*/` 已在 `.gitignore` 里。
+
+**`MANAGER_PIPELINES_DIR` 别漏。** 流水线定制页会**写回 YAML 文件**，而模板目录默认指向仓库里的
+`config/pipelines` —— 起临时实例试那个页面时不隔离，一试就把仓库改了。
+（这个缺口是被一次验证踩出来的：脚本以为自己写的是临时目录，实际写进了仓库。）
 
 ## 已实现的接口
 

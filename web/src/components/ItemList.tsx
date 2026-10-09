@@ -219,6 +219,13 @@ export function NewItemForm({
       {chosen && (
         <p className="w-full text-[11px] text-zinc-500">
           {chosen.stages.map((s) => s.name).join(' → ')}
+          <button
+            type="button"
+            className="ml-2 text-sky-400 hover:text-sky-300"
+            onClick={() => navigate({ name: 'pipelines' })}
+          >
+            改流水线
+          </button>
         </p>
       )}
 

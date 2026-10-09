@@ -60,6 +60,16 @@ export function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-6">
+      <div className="flex items-center justify-end">
+        {/* 流水线是配置不是代码，入口放这儿 —— 想改流程时不用去翻仓库 */}
+        <button
+          className="rounded border border-zinc-800 px-2 py-1 text-[11px] text-zinc-500 hover:border-zinc-600 hover:text-zinc-300"
+          onClick={() => navigate({ name: 'pipelines' })}
+          title="改流水线的阶段和待办；改完立刻生效，不用重启"
+        >
+          流水线定制
+        </button>
+      </div>
       <StatsRow sections={data.sections} />
       <FocusRow focus={data.focus} />
       {data.caretaking.length > 0 && <CaretakingBlock projects={data.caretaking} />}

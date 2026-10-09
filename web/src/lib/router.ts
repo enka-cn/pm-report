@@ -13,7 +13,8 @@ export type Route =
   | { name: 'item'; id: number; stageId: number | null }
   | { name: 'reports'; reportId: number | null }
   | { name: 'projects'; projectId: number | null }
-  | { name: 'search'; q: string | null };
+  | { name: 'search'; q: string | null }
+  | { name: 'pipelines' };
 
 export function parseHash(hash: string): Route {
   const path = hash.replace(/^#\/?/, '');
@@ -22,6 +23,7 @@ export function parseHash(hash: string): Route {
   if (path === 'reports') return { name: 'reports', reportId: null };
   if (path === 'projects') return { name: 'projects', projectId: null };
   if (path === 'search') return { name: 'search', q: null };
+  if (path === 'pipelines') return { name: 'pipelines' };
 
   const m = /^items\/(\d+)(?:\/(\d+))?$/.exec(path);
   if (m) {
@@ -64,6 +66,8 @@ export function routeToHash(route: Route): string {
       return route.projectId === null ? '#/projects' : `#/projects/${route.projectId}`;
     case 'search':
       return route.q ? `#/search/${encodeURIComponent(route.q)}` : '#/search';
+    case 'pipelines':
+      return '#/pipelines';
   }
 }
 

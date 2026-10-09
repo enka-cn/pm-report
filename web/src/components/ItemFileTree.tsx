@@ -31,6 +31,10 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
   const [renamingFile, setRenamingFile] = useState<number | null>(null);
   const [hover, setHover] = useState<Target | null>(null);
   const [showRemoved, setShowRemoved] = useState(false);
+  /** 就地确认移除：正在确认哪一个交付物，以及填的原因 */
+  const [removingFile, setRemovingFile] = useState<number | null>(null);
+  const [confirmingBatch, setConfirmingBatch] = useState(false);
+  const [removeReason, setRemoveReason] = useState('');
   /** 勾选了哪些交付物。批量操作就是围绕它转的 */
   const [selected, setSelected] = useState<ReadonlySet<number>>(new Set());
 
@@ -189,24 +193,56 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
 
               <span className="ml-auto flex shrink-0 items-center gap-2">
                 <span className="text-[10px] text-zinc-600">{d.versions.length} 版</span>
-                <button
-                  type="button"
-                  title="移除（记录和文件分开处理：这一步不动磁盘，可在下方「已移除」里恢复）"
-                  onClick={() => {
-                    const reason = window.prompt(
-                      `移除「${d.name}」？\n\n它只是从各处消失，磁盘上的文件还在 —— 真正回收空间要点面板底部的「回收磁盘」，在那之前都可以恢复。\n\n（可以写个原因，会记进事件日志）`,
-                      '',
-                    );
-                    if (reason === null) return;
-                    void run(
-                      () => api.removeDeliverable(d.id, reason || undefined),
-                      `已移除「${d.name}」`,
-                    );
-                  }}
-                  className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-rose-400"
-                >
-                  移除
-                </button>
+                {removingFile === d.id ? (
+                  // 就地确认，不弹窗口。移除是破坏性动作，确认该有；
+                  // 但"顺便问原因"那一步用 prompt 会把心流打断
+                  <form
+                    className="flex items-center gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const reason = removeReason.trim();
+                      setRemovingFile(null);
+                      setRemoveReason('');
+                      void run(
+                        () => api.removeDeliverable(d.id, reason || undefined),
+                        `已移除「${d.name}」`,
+                      );
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      value={removeReason}
+                      onChange={(e) => setRemoveReason(e.target.value)}
+                      placeholder="原因（可留空）"
+                      className={`${inputCls} w-40 py-0 text-[11px]`}
+                    />
+                    <button type="submit" className="text-[10px] text-rose-400 hover:text-rose-300">
+                      移除
+                    </button>
+                    <button
+                      type="button"
+                      className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                      onClick={() => {
+                        setRemovingFile(null);
+                        setRemoveReason('');
+                      }}
+                    >
+                      取消
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    type="button"
+                    title="移除（记录和文件分开处理：这一步不动磁盘，可在下方「已移除」里恢复）"
+                    onClick={() => {
+                      setRemoveReason('');
+                      setRemovingFile(d.id);
+                    }}
+                    className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-rose-400"
+                  >
+                    移除
+                  </button>
+                )}
               </span>
             </li>
           );
@@ -389,26 +425,59 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
             ))}
           </select>
 
-          <button
-            className={btnGhost}
-            onClick={() => {
-              const count = selected.size;
-              const reason = window.prompt(
-                `移除选中的 ${count} 个交付物？\n\n` +
-                  `它们只是从各处消失，磁盘上的文件还在 —— 真正回收空间要点面板底部的「回收磁盘」，` +
-                  `在那之前都可以在「已移除」里恢复。\n\n（可以写个原因，会记进事件日志）`,
-                '',
-              );
-              if (reason === null) return;
-              void runBatch('remove', (r) => `已移除 ${r.changed} 个`, { reason });
-            }}
-          >
-            移除
-          </button>
+          {confirmingBatch ? (
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const reason = removeReason.trim();
+                setConfirmingBatch(false);
+                setRemoveReason('');
+                void runBatch('remove', (r) => `已移除 ${r.changed} 个`, { reason });
+              }}
+            >
+              <span className="text-rose-300">确认移除这 {selected.size} 个？</span>
+              <input
+                autoFocus
+                value={removeReason}
+                onChange={(e) => setRemoveReason(e.target.value)}
+                placeholder="原因（可留空）"
+                className={`${inputCls} w-44 py-0.5 text-xs`}
+              />
+              <button type="submit" className={btnGhost}>
+                移除
+              </button>
+              <button
+                type="button"
+                className={btnGhost}
+                onClick={() => {
+                  setConfirmingBatch(false);
+                  setRemoveReason('');
+                }}
+              >
+                取消
+              </button>
+              <span className="text-[11px] text-zinc-500">
+                只是从各处消失，磁盘上的文件还在 —— 回收空间要点面板底部的「回收磁盘」
+              </span>
+            </form>
+          ) : (
+            <>
+              <button
+                className={btnGhost}
+                onClick={() => {
+                  setRemoveReason('');
+                  setConfirmingBatch(true);
+                }}
+              >
+                移除
+              </button>
 
-          <button className={btnGhost} onClick={() => setSelected(new Set())}>
-            取消选择
-          </button>
+              <button className={btnGhost} onClick={() => setSelected(new Set())}>
+                取消选择
+              </button>
+            </>
+          )}
         </div>
       )}
 

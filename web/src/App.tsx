@@ -7,6 +7,7 @@ import { ProjectDetail } from './components/ProjectDetail';
 import { Projects } from './components/Projects';
 import { Reports } from './components/Reports';
 import { Search } from './components/Search';
+import { Pipelines } from './components/Pipelines';
 import { NoticeProvider, useNotice } from './lib/notice';
 import { navigate, useRoute } from './lib/router';
 
@@ -90,6 +91,7 @@ function Shell() {
         {route.name === 'item' && <ItemDetail id={route.id} stageId={route.stageId} />}
         {route.name === 'reports' && <Reports reportId={route.reportId} />}
         {route.name === 'search' && <Search q={route.q} />}
+        {route.name === 'pipelines' && <Pipelines />}
         {route.name === 'projects' &&
           (route.projectId === null ? (
             <Projects />

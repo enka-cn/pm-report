@@ -5,7 +5,14 @@ import { parse as parseYaml } from 'yaml';
 /** 仓库根目录（server/src/config.ts -> ../..） */
 export const ROOT = path.resolve(import.meta.dirname, '..', '..');
 export const CONFIG_DIR = path.join(ROOT, 'config');
-export const PIPELINES_DIR = path.join(CONFIG_DIR, 'pipelines');
+/**
+ * 流水线模板目录。
+ *
+ * 和 DATA_DIR 一样可以用环境变量指到别处 —— **界面上能改模板**，所以起临时实例来试的时候
+ * 必须能隔离，否则一试就把仓库里的 `config/pipelines` 改了。
+ * （这个缺口是被一次验证踩出来的：验证脚本以为自己写的是临时目录，实际写进了仓库。）
+ */
+export const PIPELINES_DIR = process.env['MANAGER_PIPELINES_DIR'] ?? path.join(CONFIG_DIR, 'pipelines');
 export const REPORT_TEMPLATES_DIR = path.join(CONFIG_DIR, 'report_templates');
 /**
  * 运行时数据目录。可以用 `MANAGER_DATA_DIR` 指到别处 ——

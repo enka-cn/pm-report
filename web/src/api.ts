@@ -19,6 +19,7 @@ import type {
   MetaResponse,
   PaletteExecuteResult,
   PaletteQueryResult,
+  PipelineStageDef,
   PipelineTemplate,
   ProjectDetail,
   ProjectKind,
@@ -100,6 +101,20 @@ export const api = {
   /** 已加载的流水线模板。新建需求时照着选，避免选到没有模板的角色 */
   pipelines: () => request<{ pipelines: PipelineTemplate[] }>('/api/pipelines'),
 
+  /** 存一条流水线模板。key 以参数为准（它同时是文件名，建了之后不该改） */
+  savePipeline: (
+    key: string,
+    body: { name: string; role: Role; stages: PipelineStageDef[] },
+  ) =>
+    request<{ pipelines: PipelineTemplate[]; key: string }>(`/api/pipelines/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  deletePipeline: (key: string) =>
+    request<{ pipelines: PipelineTemplate[] }>(`/api/pipelines/${encodeURIComponent(key)}`, {
+      method: 'DELETE',
+    }),
   createItem: (body: {
     title: string;
     role: Role;
