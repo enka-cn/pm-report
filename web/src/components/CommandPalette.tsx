@@ -181,7 +181,7 @@ export function CommandPalette({ open, onOpenChange, currentItemId }: Props) {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[10vh]"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-start justify-center bg-black/60 pt-[10vh] backdrop-blur-xs"
       onMouseDown={() => onOpenChange(false)}
     >
       <Command
@@ -192,7 +192,7 @@ export function CommandPalette({ open, onOpenChange, currentItemId }: Props) {
         onKeyDown={(e) => {
           if (e.key === 'ArrowDown' || e.key === 'ArrowUp') setNavigated(true);
         }}
-        className="w-[min(760px,94vw)] overflow-hidden rounded-lg border border-zinc-700 bg-zinc-900 shadow-2xl"
+        className="w-[min(700px,94vw)] overflow-hidden rounded-2xl border border-white/[0.10] bg-[#11161F] shadow-2xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <Command.Input
@@ -207,25 +207,25 @@ export function CommandPalette({ open, onOpenChange, currentItemId }: Props) {
             }
           }}
           placeholder="搜索需求，或输入 / 开头的命令（Tab 补全）"
-          className="w-full border-b border-zinc-800 bg-transparent px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500"
+          className="w-full border-b border-white/[0.07] bg-transparent px-4 py-3.5 text-sm text-slate-100 outline-none placeholder:text-slate-600"
         />
 
         {result?.preview && (
-          <div className="border-b border-zinc-800 bg-zinc-800/40 px-4 py-2 text-xs text-zinc-300">
-            <span className="text-zinc-500">将要执行：</span> {result.preview}
+          <div className="border-b border-white/[0.07] bg-indigo-500/[0.06] px-4 py-2 text-xs text-slate-300">
+            <span className="text-slate-500">将要执行：</span> {result.preview}
           </div>
         )}
 
         {result?.error && (
-          <div className="border-b border-zinc-800 px-4 py-2 text-xs text-amber-300">
+          <div className="border-b border-white/[0.07] px-4 py-2 text-xs text-rose-300">
             {result.error}
           </div>
         )}
 
-        <Command.List className="max-h-[52vh] overflow-y-auto py-1">
-          {query.isLoading && <div className="px-4 py-3 text-xs text-zinc-500">查询中…</div>}
+        <Command.List className="max-h-[52vh] overflow-y-auto p-1.5">
+          {query.isLoading && <div className="px-4 py-3 text-xs text-slate-500">查询中…</div>}
 
-          <Command.Empty className="px-4 py-6 text-center text-xs text-zinc-500">
+          <Command.Empty className="px-4 py-8 text-center text-xs text-slate-500">
             没有匹配项
           </Command.Empty>
 
@@ -241,21 +241,21 @@ export function CommandPalette({ open, onOpenChange, currentItemId }: Props) {
                 mouseRef.current = false;
                 choose(cand, viaMouse);
               }}
-              className="flex cursor-pointer items-baseline gap-2 border-l-2 border-transparent px-4 py-2 data-[selected=true]:border-sky-400 data-[selected=true]:bg-zinc-800"
+              className="group flex cursor-pointer items-baseline gap-2 rounded-lg px-3 py-2.5 transition-colors data-[selected=true]:bg-indigo-500/15"
             >
-              <span className="text-zinc-500">{cand.kind === 'command' ? '/' : '·'}</span>
-              <span className="text-zinc-100">{cand.label}</span>
+              <span className="text-slate-600 group-data-[selected=true]:text-indigo-400">{cand.kind === 'command' ? '/' : '·'}</span>
+              <span className="text-sm text-slate-100 group-data-[selected=true]:text-indigo-200">{cand.label}</span>
               {cand.insert && (
-                <span className="shrink-0 rounded bg-zinc-800 px-1 text-[10px] text-zinc-500" title="按 Tab 补全">
+                <span className="shrink-0 rounded border border-white/[0.08] bg-white/[0.04] px-1 font-mono text-[10px] text-slate-500" title="按 Tab 补全">
                   ⇥ {cand.insert}
                 </span>
               )}
-              <span className="ml-auto truncate text-xs text-zinc-500">{cand.detail}</span>
+              <span className="ml-auto truncate text-xs text-slate-500">{cand.detail}</span>
             </Command.Item>
           ))}
         </Command.List>
 
-        <div className="border-t border-zinc-800 px-4 py-2 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.07] px-4 py-2 text-[11px] text-slate-600">
           Tab 补全 · #REQ 指定需求 · @阶段 指定阶段 · ↑↓ 选择 · Enter 执行 · Esc 关闭
         </div>
       </Command>

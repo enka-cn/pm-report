@@ -7,7 +7,7 @@ import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { fmtTime } from '../lib/format';
 import { ProjectKindBadge } from './Badges';
-import { Field, Hint, btnGhost, btnPrimary, inputCls } from './ui';
+import { Button, Field, Hint, inputCls, mono, surface } from './ui';
 
 export function Projects() {
   const [kind, setKind] = useState<ProjectKind | ''>('');
@@ -22,8 +22,9 @@ export function Projects() {
   const projects = list.data?.projects ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+    // 页面标题与四周留白都由壳层的吸顶 header / <main> 提供，这里只负责居中和纵向间距
+    <div className="mx-auto max-w-5xl space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as ProjectKind | '')}
@@ -34,21 +35,23 @@ export function Projects() {
           <option value="caretaking">看护型</option>
         </select>
 
-        <label className="flex items-center gap-1 text-xs text-zinc-400">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-300">
           <input
             type="checkbox"
             checked={includeArchived}
             onChange={(e) => setIncludeArchived(e.target.checked)}
+            className="accent-indigo-500"
           />
           含已归档
         </label>
 
-        <button
+        <Button
+          variant={creating ? 'secondary' : 'primary'}
           onClick={() => setCreating((v) => !v)}
-          className="ml-auto rounded bg-zinc-100 px-3 py-1 text-sm text-zinc-900 hover:bg-white"
+          className="ml-auto"
         >
           {creating ? '取消' : '新建项目'}
-        </button>
+        </Button>
       </div>
 
       {creating && <NewProjectForm onDone={() => setCreating(false)} />}
@@ -63,24 +66,45 @@ export function Projects() {
         </Hint>
       )}
 
-      <ul className="space-y-2">
+      <ul className="grid grid-cols-1 gap-3 md:grid-cols-2">
         {projects.map((p) => (
           <li key={p.id}>
             <button
               onClick={() => navigate({ name: 'projects', projectId: p.id })}
-              className="w-full rounded border border-zinc-800 px-3 py-2 text-left hover:border-zinc-600 hover:bg-zinc-900"
+              className={`${surface.card} flex h-full w-full flex-col px-4 py-3 text-left transition-colors ${
+                p.kind === 'caretaking' ? 'border-t-2 border-t-sky-500/40' : ''
+              }`}
             >
               <div className="flex flex-wrap items-center gap-2">
-                {p.code && <span className="font-mono text-xs text-zinc-500">{p.code}</span>}
-                <span className="text-sm text-zinc-100">{p.name}</span>
+                {p.code && <span className={mono}>{p.code}</span>}
+                <span className="text-sm font-semibold tracking-tight text-slate-100">
+                  {p.name}
+                </span>
                 <ProjectKindBadge kind={p.kind} />
-                {p.archived_at && <span className="text-xs text-zinc-500">已归档</span>}
-                <span className="ml-auto text-xs text-zinc-500">负责人 {p.owner}</span>
+                {p.archived_at && <span className="text-[11px] text-slate-500">已归档</span>}
+                {p.pending_handoff && (
+                  <span className="text-[11px] text-amber-300">待接收</span>
+                )}
               </div>
 
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-500">
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
+                {p.description ?? '还没有写说明。'}
+              </p>
+
+              <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 pt-2 text-xs text-slate-500">
                 <span>
-                  子需求 <b className={p.active_items > 0 ? 'text-zinc-300' : ''}>{p.active_items}</b>
+                  负责人 <span className="text-slate-300">{p.owner}</span>
+                </span>
+                {p.due_at && (
+                  <span>
+                    DDL <span className={mono}>{p.due_at}</span>
+                  </span>
+                )}
+                <span>
+                  子需求{' '}
+                  <b className={p.active_items > 0 ? 'text-slate-300' : 'text-slate-500'}>
+                    {p.active_items}
+                  </b>
                   {p.total_items > p.active_items && ` / 共 ${p.total_items}`}
                 </span>
                 {p.open_blockers > 0 && (
@@ -136,10 +160,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="mb-4 space-y-3 rounded border border-zinc-800 bg-zinc-900/60 p-3"
-    >
+    <form onSubmit={submit} className={`${surface.inset} space-y-3 p-4`}>
       <div className="flex flex-wrap items-end gap-3">
         <Field label="名称">
           <input
@@ -157,7 +178,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             placeholder="看护类通常没有"
-            className={`${inputCls} w-32 font-mono text-sm`}
+            className={`${inputCls} w-32 font-mono text-xs`}
           />
         </Field>
 
@@ -214,17 +235,17 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
       </Field>
 
       <div className="flex items-center gap-2">
-        <button type="submit" disabled={busy} className={btnPrimary}>
+        <Button type="submit" variant="primary" disabled={busy}>
           {busy ? '创建中…' : '创建'}
-        </button>
-        <button type="button" className={btnGhost} onClick={onDone}>
+        </Button>
+        <Button type="button" variant="ghost" onClick={onDone}>
           取消
-        </button>
+        </Button>
       </div>
 
       {kind === 'caretaking' && (
-        <p className="text-[11px] leading-relaxed text-zinc-500">
-          看护型项目<strong className="text-zinc-400">不进任何时间桶</strong>
+        <p className="text-[11px] leading-relaxed text-slate-500">
+          看护型项目<strong className="text-slate-300">不进任何时间桶</strong>
           （它不是一个需求，没有日程），只在驾驶舱的「看护中」里安静地列着。
           触发时，在它下面新建一条子需求 —— 那条子需求是普通需求，有 DDL 就照常提醒。
         </p>

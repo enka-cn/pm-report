@@ -6,17 +6,7 @@ import { fmtTime } from '../lib/format';
 import { messageOf } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { useMeta } from '../lib/meta';
-import { Hint, btnGhost } from './ui';
-
-const KIND_TONE: Record<SearchKind, string> = {
-  item: 'bg-zinc-700/60 text-zinc-200',
-  note: 'bg-sky-500/15 text-sky-300',
-  todo: 'bg-emerald-500/15 text-emerald-300',
-  blocker: 'bg-amber-500/15 text-amber-300',
-  deliverable: 'bg-violet-500/15 text-violet-300',
-  project: 'bg-cyan-500/15 text-cyan-300',
-  link: 'bg-rose-500/15 text-rose-300',
-};
+import { Button, Hint, Input, surface } from './ui';
 
 export function Search({ q }: { q: string | null }) {
   const meta = useMeta();
@@ -48,20 +38,30 @@ export function Search({ q }: { q: string | null }) {
 
   const data = result.data;
   const hits = data?.hits ?? [];
+  const totalHits = data ? Object.values(data.counts).reduce((a, b) => a + b, 0) : 0;
+
+  // 按 kind 分组。服务端已经按「标题命中优先、时间倒序」排好，分组只是换一种阅读方式，
+  // 组内顺序保持服务端给的顺序（不重排，免得丢信息）。
+  const groups = data
+    ? (Object.keys(data.counts) as SearchKind[])
+        .map((k) => ({ kind: k, hits: hits.filter((h) => h.kind === k) }))
+        .filter((g) => g.hits.length > 0)
+    : [];
 
   return (
-    <div className="mx-auto max-w-[1000px] px-6 py-6">
-      <input
+    // 页面标题与四周留白都由壳层的吸顶 header / <main> 提供，这里只负责居中和纵向间距
+    <div className="mx-auto max-w-[1000px] space-y-4">
+      <Input
         autoFocus
         value={input}
         onChange={(e) => setInput(e.target.value)}
         placeholder="全文检索：备注、待办、交付物、阻塞、项目说明……"
-        className="w-full rounded border border-zinc-700 bg-zinc-900 px-4 py-3 text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-zinc-500"
+        className="py-2 text-sm"
       />
 
       {!q && (
         <Hint>
-          搜的是<strong className="text-zinc-400">正文</strong>，不只是标题：你写在备注里的
+          搜的是<strong className="font-medium text-slate-300">正文</strong>，不只是标题：你写在备注里的
           「等测试组排期」、随手加的待办、交付物文件名、阻塞里等谁等什么、项目的看护条件，
           都在里面。
         </Hint>
@@ -70,14 +70,14 @@ export function Search({ q }: { q: string | null }) {
       {result.error && <Hint tone="error">{messageOf(result.error)}</Hint>}
 
       {data && (
-        <>
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-zinc-500">
-              「{data.q}」共 {Object.values(data.counts).reduce((a, b) => a + b, 0)} 条
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="text-slate-500">
+              「{data.q}」共 {totalHits} 条
             </span>
             <FilterChip
               label="全部"
-              count={Object.values(data.counts).reduce((a, b) => a + b, 0)}
+              count={totalHits}
               active={kind === null}
               onClick={() => setKind(null)}
             />
@@ -96,20 +96,28 @@ export function Search({ q }: { q: string | null }) {
 
           {hits.length === 0 && <Hint>没找到。换个词试试，或者去掉上面的类别筛选。</Hint>}
 
-          <ul className="mt-3 space-y-1">
-            {hits.map((hit) => (
-              <li key={`${hit.kind}-${hit.refId}`}>
-                <Hit hit={hit} />
-              </li>
-            ))}
-          </ul>
+          {groups.map((g) => (
+            <section key={g.kind}>
+              <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                {meta.data?.searchKinds[g.kind] ?? g.kind}
+                <span className="text-slate-600">({g.hits.length})</span>
+              </h3>
+              <ul className="space-y-2">
+                {g.hits.map((hit) => (
+                  <li key={`${hit.kind}-${hit.refId}`}>
+                    <Hit hit={hit} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ))}
 
-          {data.total < Object.values(data.counts).reduce((a, b) => a + b, 0) && (
-            <p className="mt-3 text-xs text-zinc-500">
+          {data.total < totalHits && (
+            <p className="text-xs text-slate-500">
               只显示了前 {data.total} 条，缩小范围可以看得更全。
             </p>
           )}
-        </>
+        </div>
       )}
 
       <ReindexButton />
@@ -132,10 +140,10 @@ function FilterChip({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded px-2 py-0.5 transition ${
+      className={`rounded-full border px-2.5 py-0.5 transition-colors ${
         active
-          ? 'bg-zinc-100 text-zinc-900'
-          : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+          ? 'border-indigo-500/30 bg-indigo-500/15 text-indigo-300'
+          : 'border-white/[0.08] bg-white/[0.04] text-slate-400 hover:bg-white/[0.07] hover:text-slate-200'
       }`}
     >
       {label} {count}
@@ -144,8 +152,6 @@ function FilterChip({
 }
 
 function Hit({ hit }: { hit: SearchHit }) {
-  const meta = useMeta();
-
   // 子条目（备注/待办/阻塞/交付物）跳到它所属的需求；项目跳到项目页
   const go = (): void => {
     if (hit.kind === 'project' && hit.projectId !== null) {
@@ -166,22 +172,19 @@ function Hit({ hit }: { hit: SearchHit }) {
     <button
       type="button"
       onClick={go}
-      className="w-full rounded border border-transparent px-3 py-2 text-left hover:border-zinc-700 hover:bg-zinc-900"
+      className={`${surface.card} w-full px-3 py-2 text-left transition-colors`}
     >
       <div className="flex flex-wrap items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[10px] ${KIND_TONE[hit.kind]}`}>
-          {meta.data?.searchKinds[hit.kind] ?? hit.kind}
-        </span>
-        {target && <span className="text-xs text-zinc-300">{target}</span>}
+        {target && <span className="text-xs text-slate-200">{target}</span>}
         {hit.projectName && hit.kind !== 'project' && (
-          <span className="text-[10px] text-zinc-600">· {hit.projectName}</span>
+          <span className="text-[10px] text-slate-500">· {hit.projectName}</span>
         )}
-        <span className="ml-auto shrink-0 text-[10px] text-zinc-600">
+        <span className="ml-auto shrink-0 font-mono text-[10px] text-indigo-400">
           {fmtTime(hit.occurredAt)}
         </span>
       </div>
 
-      <p className="mt-1 text-sm text-zinc-400">
+      <p className="mt-1 text-xs leading-relaxed text-slate-300">
         <Snippet text={hit.snippet} />
       </p>
     </button>
@@ -195,7 +198,7 @@ function Snippet({ text }: { text: string }) {
     <>
       {parts.map((part, i) =>
         part.startsWith('[') && part.endsWith(']') ? (
-          <mark key={i} className="rounded bg-amber-500/25 px-0.5 text-amber-100">
+          <mark key={i} className="rounded bg-indigo-500/20 px-0.5 text-indigo-200">
             {part.slice(1, -1)}
           </mark>
         ) : (
@@ -211,10 +214,10 @@ export function ReindexButton() {
   const [done, setDone] = useState<number | null>(null);
 
   return (
-    <div className="mt-6 border-t border-zinc-800 pt-3">
-      <button
-        type="button"
-        className={btnGhost}
+    <div className="border-t border-white/[0.07] pt-3">
+      <Button
+        variant="ghost"
+        size="sm"
         disabled={busy}
         title="正常情况下用不上（触发器保证同步），是索引漂了时的对账手段"
         onClick={() => {
@@ -227,9 +230,9 @@ export function ReindexButton() {
         }}
       >
         {busy ? '重建中…' : '重建搜索索引'}
-      </button>
+      </Button>
       {done !== null && (
-        <span className="ml-2 text-xs text-zinc-500">已重建，共 {done} 条。</span>
+        <span className="ml-2 text-xs text-slate-500">已重建，共 {done} 条。</span>
       )}
     </div>
   );

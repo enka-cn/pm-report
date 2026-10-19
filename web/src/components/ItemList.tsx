@@ -6,7 +6,7 @@ import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { ConditionBadge, RoleBadge } from './Badges';
-import { Field, Hint, inputCls } from './ui';
+import { Button, Field, Hint, inputCls, mono, surface } from './ui';
 
 export function ItemList() {
   const [q, setQ] = useState('');
@@ -24,19 +24,20 @@ export function ItemList() {
   const items = list.data?.items ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-6">
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+    // 页面标题与四周留白都由壳层的吸顶 header / <main> 提供，这里只负责居中和纵向间距
+    <div className="mx-auto max-w-5xl space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="搜索标题 / 编号"
-          className="w-56 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+          className={`${inputCls} w-56 text-sm`}
         />
 
         <select
           value={role}
           onChange={(e) => setRole(e.target.value as Role | '')}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className={`${inputCls} text-sm`}
         >
           <option value="">全部角色</option>
           {Object.entries(meta.data?.roles ?? {}).map(([k, v]) => (
@@ -49,7 +50,7 @@ export function ItemList() {
         <select
           value={condition}
           onChange={(e) => setCondition(e.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className={`${inputCls} text-sm`}
         >
           <option value="">全部状况</option>
           {Object.entries(meta.data?.conditions ?? {}).map(([k, v]) => (
@@ -59,21 +60,23 @@ export function ItemList() {
           ))}
         </select>
 
-        <label className="flex items-center gap-1 text-xs text-zinc-400">
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-300">
           <input
             type="checkbox"
             checked={includeClosed}
             onChange={(e) => setIncludeClosed(e.target.checked)}
+            className="accent-indigo-500"
           />
           含已关闭
         </label>
 
-        <button
+        <Button
+          variant={creating ? 'secondary' : 'primary'}
           onClick={() => setCreating((v) => !v)}
-          className="ml-auto rounded bg-zinc-100 px-3 py-1 text-sm text-zinc-900 hover:bg-white"
+          className="ml-auto"
         >
           {creating ? '取消' : '新建需求'}
-        </button>
+        </Button>
       </div>
 
       {creating && <NewItemForm onDone={() => setCreating(false)} />}
@@ -84,38 +87,38 @@ export function ItemList() {
       {!list.isLoading && items.length === 0 && <Hint>没有匹配的需求。</Hint>}
 
       {items.length > 0 && (
-        <table className="w-full border-collapse text-sm">
-          <thead>
-            <tr className="border-b border-zinc-800 text-left text-xs text-zinc-500">
-              <th className="px-2 py-1 font-normal">编号</th>
-              <th className="px-2 py-1 font-normal">标题</th>
-              <th className="px-2 py-1 font-normal">角色</th>
-              <th className="px-2 py-1 font-normal">状况</th>
-              <th className="px-2 py-1 font-normal">整体 DDL</th>
-              <th className="px-2 py-1 font-normal">关键度</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr
-                key={item.id}
+        <ul className="space-y-2">
+          {items.map((item) => (
+            <li key={item.id}>
+              <button
                 onClick={() => navigate({ name: 'item', id: item.id, stageId: null })}
-                className="cursor-pointer border-b border-zinc-800/60 hover:bg-zinc-800/40"
+                className={`${surface.card} flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors`}
               >
-                <td className="px-2 py-1.5 font-mono text-xs text-zinc-500">{item.code ?? '—'}</td>
-                <td className="px-2 py-1.5 text-zinc-100">{item.title}</td>
-                <td className="px-2 py-1.5">
-                  <RoleBadge role={item.role} />
-                </td>
-                <td className="px-2 py-1.5">
+                <span
+                  className={`w-24 shrink-0 truncate ${
+                    item.code ? mono : 'font-mono text-xs text-slate-600'
+                  }`}
+                  title={item.code ?? '没有编号'}
+                >
+                  {item.code ?? '—'}
+                </span>
+
+                <span className="min-w-0 flex-1 truncate text-sm text-slate-200">
+                  {item.title}
+                </span>
+
+                <span className="flex shrink-0 items-center gap-2">
                   <ConditionBadge condition={item.condition} />
-                </td>
-                <td className="px-2 py-1.5 text-zinc-400">{item.due_at ?? '—'}</td>
-                <td className="px-2 py-1.5 text-zinc-400">{item.criticality}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                  <RoleBadge role={item.role} />
+                  <span className="hidden items-center gap-3 text-xs text-slate-500 sm:flex">
+                    <span>关键度 {item.criticality}</span>
+                    <span>DDL {item.due_at ?? '未设'}</span>
+                  </span>
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
@@ -178,10 +181,7 @@ export function NewItemForm({
   }
 
   return (
-    <form
-      onSubmit={submit}
-      className="mb-4 flex flex-wrap items-end gap-3 rounded border border-zinc-800 bg-zinc-900/60 p-3"
-    >
+    <form onSubmit={submit} className={`${surface.inset} flex flex-wrap items-end gap-3 p-4`}>
       <Field label="标题">
         <input
           required
@@ -189,7 +189,7 @@ export function NewItemForm({
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="例如：接口鉴权改造"
-          className="w-64 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+          className={`${inputCls} w-64`}
         />
       </Field>
 
@@ -198,7 +198,7 @@ export function NewItemForm({
           value={code}
           onChange={(e) => setCode(e.target.value)}
           placeholder="例：REQ-1234"
-          className="w-28 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-zinc-100 outline-none focus:border-zinc-500"
+          className={`${inputCls} w-28 font-mono text-xs`}
         />
       </Field>
 
@@ -207,7 +207,7 @@ export function NewItemForm({
           value={chosen?.key ?? ''}
           onChange={(e) => setPipelineKey(e.target.value)}
           disabled={pipelines.length === 0}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className={`${inputCls} text-sm`}
         >
           {pipelines.map((p) => (
             <option key={p.key} value={p.key}>
@@ -216,25 +216,13 @@ export function NewItemForm({
           ))}
         </select>
       </Field>
-      {chosen && (
-        <p className="w-full text-[11px] text-zinc-500">
-          {chosen.stages.map((s) => s.name).join(' → ')}
-          <button
-            type="button"
-            className="ml-2 text-sky-400 hover:text-sky-300"
-            onClick={() => navigate({ name: 'pipelines' })}
-          >
-            改流水线
-          </button>
-        </p>
-      )}
 
       <Field label="整体 DDL">
         <input
           type="date"
           value={dueAt}
           onChange={(e) => setDueAt(e.target.value)}
-          className="rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className={`${inputCls} text-sm`}
         />
       </Field>
 
@@ -245,17 +233,26 @@ export function NewItemForm({
           max={5}
           value={criticality}
           onChange={(e) => setCriticality(Number(e.target.value))}
-          className="w-16 rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-200"
+          className={`${inputCls} w-16 text-center`}
         />
       </Field>
 
-      <button
-        type="submit"
-        disabled={busy}
-        className="rounded bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-      >
+      <Button type="submit" variant="primary" disabled={busy}>
         {busy ? '创建中…' : '创建'}
-      </button>
+      </Button>
+
+      {chosen && (
+        <p className="w-full text-[11px] leading-relaxed text-slate-500">
+          {chosen.stages.map((s) => s.name).join(' → ')}
+          <button
+            type="button"
+            className="ml-2 text-indigo-400 transition-colors hover:text-indigo-300"
+            onClick={() => navigate({ name: 'pipelines' })}
+          >
+            改流水线
+          </button>
+        </p>
+      )}
     </form>
   );
 }

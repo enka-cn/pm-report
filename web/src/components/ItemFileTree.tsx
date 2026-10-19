@@ -7,7 +7,7 @@ import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { beginDeliverableDrag, deliverableIdOf, isDeliverableDrag } from '../lib/drop';
 import { fmtTime } from '../lib/format';
-import { btnGhost, btnPrimary, inputCls } from './ui';
+import { Button, SurfaceCard, inputCls } from './ui';
 
 type Act = <T>(fn: () => Promise<T>, success?: (r: T) => string) => Promise<void>;
 
@@ -138,10 +138,12 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
               draggable
               onDragStart={(e) => beginDeliverableDrag(e, d.id)}
               title="拖动可以移进别的文件夹"
-              className="group flex flex-wrap items-baseline gap-2 rounded px-1 py-0.5 hover:bg-zinc-800/40"
-              style={{ paddingLeft: depth * 16 + 6 }}
+              className={`group flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 transition-colors ${
+                selected.has(d.id) ? 'bg-indigo-500/10' : 'hover:bg-white/[0.04]'
+              }`}
+              style={{ paddingLeft: depth * 16 + 8 }}
             >
-              <span className="text-zinc-600">·</span>
+              <FileIcon />
 
               <input
                 type="checkbox"
@@ -165,34 +167,34 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                   type="button"
                   onDoubleClick={() => setRenamingFile(d.id)}
                   title="双击改名"
-                  className="max-w-[26rem] truncate text-sm text-zinc-200"
+                  className="max-w-[26rem] truncate text-xs text-slate-200"
                 >
                   {d.name}
                 </button>
               )}
 
               {d.required === 1 && <span className="text-[10px] text-amber-300">必交</span>}
-              <span className="text-[10px] text-zinc-500">
+              <span className="text-[10px] text-slate-500">
                 {meta.data?.categories[d.category] ?? d.category}
               </span>
-              {stage && <span className="text-[10px] text-zinc-600">阶段：{stage}</span>}
+              {stage && <span className="text-[10px] text-slate-600">阶段：{stage}</span>}
 
               {current && (
                 <a
                   href={`/api/files/${current.sha256}`}
-                  className="text-[10px] text-sky-400 hover:text-sky-300"
+                  className="font-mono text-[11px] text-indigo-400 hover:underline"
                 >
                   {current.original_filename}
                 </a>
               )}
 
               {/* 体积要看得见：误传一个大文件时，就是靠这一列找到它的 */}
-              <span className="text-[10px] text-zinc-600">
+              <span className="text-[10px] text-slate-600">
                 {current ? humanSize(current.size_bytes) : '—'}
               </span>
 
               <span className="ml-auto flex shrink-0 items-center gap-2">
-                <span className="text-[10px] text-zinc-600">{d.versions.length} 版</span>
+                <span className="text-[10px] text-slate-600">{d.versions.length} 版</span>
                 {removingFile === d.id ? (
                   // 就地确认，不弹窗口。移除是破坏性动作，确认该有；
                   // 但"顺便问原因"那一步用 prompt 会把心流打断
@@ -216,12 +218,12 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                       placeholder="原因（可留空）"
                       className={`${inputCls} w-40 py-0 text-[11px]`}
                     />
-                    <button type="submit" className="text-[10px] text-rose-400 hover:text-rose-300">
+                    <button type="submit" className="text-[10px] text-rose-400 transition-colors hover:text-rose-300">
                       移除
                     </button>
                     <button
                       type="button"
-                      className="text-[10px] text-zinc-500 hover:text-zinc-300"
+                      className="text-[10px] text-slate-500 transition-colors hover:text-slate-300"
                       onClick={() => {
                         setRemovingFile(null);
                         setRemoveReason('');
@@ -238,7 +240,7 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                       setRemoveReason('');
                       setRemovingFile(d.id);
                     }}
-                    className="text-[10px] text-zinc-600 opacity-0 group-hover:opacity-100 hover:text-rose-400"
+                    className="text-[10px] text-slate-600 opacity-0 transition-colors group-hover:opacity-100 hover:text-rose-400"
                   >
                     移除
                   </button>
@@ -265,24 +267,32 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
     const folder = node.folder;
     const isCollapsed = collapsed.has(folder.id);
     const inside = countFiles(node);
+    const childIds = idsIn(node);
+    const isFullySelected = inside > 0 && childIds.every((id) => selected.has(id));
 
     return (
       // 标记和拖放处理器放在**外层**：这样拖到文件夹里面的文件上也算拖进这个文件夹。
       // 只标记文件夹那一行的话，往它内部的文件上拖会一路冒到根目录去。
       <div key={folder.id} data-drop-folder={folder.id} {...dragTargetProps(folder.id)}>
         <div
-          className={`group flex items-center gap-2 rounded px-1 py-1 ${
-            hover === folder.id ? 'bg-sky-500/10 ring-1 ring-sky-400/60' : 'hover:bg-zinc-800/40'
+          className={`group flex items-center gap-2 rounded-lg px-2 py-1 transition-colors ${
+            hover === folder.id
+              ? 'bg-indigo-500/10 ring-1 ring-indigo-400/60'
+              : isFullySelected
+                ? 'bg-indigo-500/10'
+                : 'hover:bg-white/[0.04]'
           }`}
-          style={{ paddingLeft: depth * 16 + 4 }}
+          style={{ paddingLeft: depth * 16 + 8 }}
         >
           <button
             type="button"
             onClick={() => toggle(folder.id)}
-            className="w-3 shrink-0 text-xs text-zinc-500"
+            className="w-3 shrink-0 text-xs text-slate-500 transition-colors hover:text-slate-300"
           >
             {isCollapsed ? '▸' : '▾'}
           </button>
+
+          <FolderIcon />
 
           {renamingFolder === folder.id ? (
             <InlineInput
@@ -297,17 +307,16 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
             <>
               <input
                 type="checkbox"
-                checked={inside > 0 && idsIn(node).every((id) => selected.has(id))}
+                checked={isFullySelected}
                 ref={(el) => {
                   // 部分选中：浏览器没有这个视觉状态，只能手动设 indeterminate
                   if (el) {
-                    const ids = idsIn(node);
                     el.indeterminate =
-                      ids.some((id) => selected.has(id)) &&
-                      !ids.every((id) => selected.has(id));
+                      childIds.some((id) => selected.has(id)) &&
+                      !childIds.every((id) => selected.has(id));
                   }
                 }}
-                onChange={(e) => toggleSelection(idsIn(node), e.target.checked)}
+                onChange={(e) => toggleSelection(childIds, e.target.checked)}
                 disabled={inside === 0}
                 title={inside === 0 ? '这个文件夹是空的' : '全选/全不选这个文件夹里的内容（含子文件夹）'}
                 className="shrink-0"
@@ -316,33 +325,33 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                 type="button"
                 onDoubleClick={() => setRenamingFolder(folder.id)}
                 title="双击改名"
-                className="text-sm text-zinc-200"
+                className="text-xs font-medium text-slate-200"
               >
                 {folder.name}
               </button>
             </>
           )}
 
-          <span className="text-[10px] text-zinc-600">{inside} 个</span>
+          <span className="text-[10px] text-slate-600">{inside} 个</span>
 
-          <span className="ml-auto flex shrink-0 items-center gap-2 text-[10px] opacity-0 group-hover:opacity-100">
+          <span className="ml-auto flex shrink-0 items-center gap-2 text-[10px] opacity-0 transition-colors group-hover:opacity-100">
             <button
               type="button"
-              className="text-zinc-500 hover:text-zinc-300"
+              className="text-slate-500 transition-colors hover:text-slate-300"
               onClick={() => setCreatingIn(folder.id)}
             >
               ＋ 子文件夹
             </button>
             <button
               type="button"
-              className="text-zinc-500 hover:text-zinc-300"
+              className="text-slate-500 transition-colors hover:text-slate-300"
               onClick={() => setRenamingFolder(folder.id)}
             >
               重命名
             </button>
             <button
               type="button"
-              className="text-zinc-600 hover:text-rose-400"
+              className="text-slate-600 transition-colors hover:text-rose-400"
               onClick={() =>
                 void run(() => api.deleteFolder(folder.id), `已删除文件夹「${folder.name}」`)
               }
@@ -375,32 +384,39 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
     );
   }
 
+  // 拖到面板空白处 = 移回根目录。高亮走 SurfaceCard 的 highlight，不靠 !important
   return (
-    <section
+    <SurfaceCard
       // 面板空白处就是「根目录」，把文件拖回这里就移出文件夹
       {...dragTargetProps('root')}
-      className={`rounded border ${hover === 'root' ? 'border-sky-500/60' : 'border-zinc-800'}`}
-    >
-      <header className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2">
-        <h2 className="text-xs font-medium text-zinc-300">全部交付物</h2>
-        <span className="text-[11px] text-zinc-500">
-          共 {total} 个 · 按文件夹归置，和阶段互不影响 · 拖动文件行可以换文件夹
+      title={
+        <span className="flex flex-wrap items-baseline gap-2">
+          全部交付物
+          <span className="text-[11px] font-normal text-slate-500">
+            共 {total} 个 · 按文件夹归置，和阶段互不影响 · 拖动文件行可以换文件夹
+          </span>
         </span>
-        <button
-          className={`${btnGhost} ml-auto`}
-          disabled={total === 0}
-          onClick={() => toggleSelection(allIds, !everySelected)}
-        >
-          {everySelected ? '取消选择' : '全选'}
-        </button>
-        <button className={btnGhost} onClick={() => setCreatingIn('root')}>
-          ＋ 新建文件夹
-        </button>
-      </header>
-
+      }
+      extra={
+        <>
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={total === 0}
+            onClick={() => toggleSelection(allIds, !everySelected)}
+          >
+            {everySelected ? '取消选择' : '全选'}
+          </Button>
+          <Button variant="secondary" size="sm" onClick={() => setCreatingIn('root')}>
+            ＋ 新建文件夹
+          </Button>
+        </>
+      }
+      highlight={hover === 'root'}
+    >
       {selected.size > 0 && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-sky-900/50 bg-sky-950/40 px-3 py-1.5 text-xs">
-          <span className="text-sky-200">已选 {selected.size} 个</span>
+        <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-indigo-500/5 px-4 py-2 text-xs">
+          <span className="text-indigo-300">已选 {selected.size} 个</span>
 
           <select
             value=""
@@ -444,38 +460,40 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                 placeholder="原因（可留空）"
                 className={`${inputCls} w-44 py-0.5 text-xs`}
               />
-              <button type="submit" className={btnGhost}>
+              <Button type="submit" variant="danger" size="sm">
                 移除
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={btnGhost}
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setConfirmingBatch(false);
                   setRemoveReason('');
                 }}
               >
                 取消
-              </button>
-              <span className="text-[11px] text-zinc-500">
+              </Button>
+              <span className="text-[11px] text-slate-500">
                 只是从各处消失，磁盘上的文件还在 —— 回收空间要点面板底部的「回收磁盘」
               </span>
             </form>
           ) : (
             <>
-              <button
-                className={btnGhost}
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => {
                   setRemoveReason('');
                   setConfirmingBatch(true);
                 }}
               >
                 移除
-              </button>
+              </Button>
 
-              <button className={btnGhost} onClick={() => setSelected(new Set())}>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>
                 取消选择
-              </button>
+              </Button>
             </>
           )}
         </div>
@@ -497,7 +515,7 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
         )}
 
         {total === 0 && detail.tree.children.length === 0 && creatingIn === null && (
-          <p className="px-1 py-2 text-xs text-zinc-500">
+          <p className="px-1 py-2 text-xs text-slate-500">
             还没有交付物。把文件拖到页面上就会出现在这里；也可以先建文件夹再把东西拖进去。
           </p>
         )}
@@ -506,22 +524,22 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
       </div>
 
       {detail.removedDeliverables.length > 0 && (
-        <div className="border-t border-zinc-800 px-3 py-2">
+        <div className="border-t border-white/[0.07] px-4 py-2.5">
           <button
             type="button"
             onClick={() => setShowRemoved((v) => !v)}
-            className="text-[11px] text-zinc-500 hover:text-zinc-300"
+            className="text-[11px] text-slate-500 transition-colors hover:text-slate-300"
           >
             {showRemoved ? '▾' : '▸'} 已移除（{detail.removedDeliverables.length}）
           </button>
 
           {showRemoved && (
-            <ul className="mt-1 space-y-px">
+            <ul className="mt-1 space-y-0.5">
               {detail.removedDeliverables.map((d) => (
-                <li key={d.id} className="flex flex-wrap items-center gap-2 py-0.5 pl-4">
-                  <span className="text-xs text-zinc-500 line-through">{d.name}</span>
+                <li key={d.id} className="flex flex-wrap items-center gap-2 py-1 pl-4">
+                  <span className="text-xs text-slate-500 line-through">{d.name}</span>
                   {d.versions.length > 0 ? (
-                    <span className="text-[10px] text-zinc-600">{d.versions.length} 版</span>
+                    <span className="text-[10px] text-slate-600">{d.versions.length} 版</span>
                   ) : (
                     <span
                       className="text-[10px] text-amber-300/70"
@@ -530,12 +548,13 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                       文件已被回收
                     </span>
                   )}
-                  <span className="text-[10px] text-zinc-600">
-                    移除于 {fmtTime(d.removed_at)}
+                  <span className="text-[10px] text-slate-600">
+                    移除于{' '}
+                    <span className="font-mono text-indigo-400">{fmtTime(d.removed_at)}</span>
                   </span>
                   <button
                     type="button"
-                    className="ml-auto text-[10px] text-sky-400 hover:text-sky-300"
+                    className="ml-auto text-[10px] text-indigo-400 transition-colors hover:text-indigo-300"
                     onClick={() =>
                       void run(
                         () => api.restoreDeliverable(d.id),
@@ -553,7 +572,7 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
       )}
 
       <StorageFooter />
-    </section>
+    </SurfaceCard>
   );
 }
 
@@ -598,10 +617,10 @@ function StorageFooter() {
   }
 
   return (
-    <footer className="flex flex-wrap items-center gap-3 border-t border-zinc-800 px-3 py-2 text-[11px] text-zinc-500">
+    <footer className="flex flex-wrap items-center gap-3 border-t border-white/[0.07] px-4 py-2.5 text-[11px] text-slate-500">
       <span>
         磁盘占用 {humanSize(u.totalBytes)}
-        <span className="text-zinc-600">
+        <span className="text-slate-600">
           （{u.totalFiles} 个文件，全库；同一份内容只存一份）
         </span>
       </span>
@@ -611,12 +630,12 @@ function StorageFooter() {
           <span className="text-amber-300">
             可回收 {humanSize(u.recoverableBytes)}（{u.recoverableFiles} 个文件）
           </span>
-          <button className={btnGhost} disabled={busy} onClick={() => void purge()}>
+          <Button variant="secondary" size="sm" disabled={busy} onClick={() => void purge()}>
             {busy ? '回收中…' : '回收磁盘'}
-          </button>
+          </Button>
         </>
       ) : (
-        <span className="text-zinc-600">没有可回收的内容</span>
+        <span className="text-slate-600">没有可回收的内容</span>
       )}
     </footer>
   );
@@ -671,10 +690,10 @@ function InlineInput({
         }}
         className={`${inputCls} w-48 py-0 text-xs`}
       />
-      <button type="submit" className="text-[10px] text-sky-400">
+      <button type="submit" className="text-[10px] text-indigo-400 transition-colors hover:text-indigo-300">
         改
       </button>
-      <button type="button" className="text-[10px] text-zinc-500" onClick={onCancel}>
+      <button type="button" className="text-[10px] text-slate-500 transition-colors hover:text-slate-300" onClick={onCancel}>
         取消
       </button>
     </form>
@@ -701,7 +720,7 @@ function NewFolderInput({
       className="flex items-center gap-1 py-0.5"
       style={{ paddingLeft: depth * 16 + 4 }}
     >
-      <span className="text-xs text-zinc-600">▾</span>
+      <span className="text-xs text-slate-600">▾</span>
       <input
         autoFocus
         value={value}
@@ -712,12 +731,49 @@ function NewFolderInput({
         placeholder="文件夹名，例如 assets"
         className={`${inputCls} w-48 py-0 text-xs`}
       />
-      <button type="submit" className={btnPrimary}>
+      <Button type="submit" variant="primary" size="sm">
         建
-      </button>
-      <button type="button" className={btnGhost} onClick={onCancel}>
+      </Button>
+      <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
         取消
-      </button>
+      </Button>
     </form>
+  );
+}
+
+/**
+ * 行首的小图标：层级靠缩进 + 图标 + 悬浮底色表达，不再靠实线框。
+ * 只是视觉标记，不绑定任何点击行为。
+ */
+function FolderIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className="h-3 w-3 shrink-0 text-indigo-400/80"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+    >
+      <path d="M2 4.5h4l1.2 1.5H14v6H2z" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      className="h-3 w-3 shrink-0 text-slate-600"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinejoin="round"
+    >
+      <path d="M4.5 2.5h4l3 3v8h-7z" />
+      <path d="M8.5 2.5v3h3" />
+    </svg>
   );
 }

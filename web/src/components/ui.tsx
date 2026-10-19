@@ -1,22 +1,190 @@
-import { useRef, useState, type ReactNode } from 'react';
+import { useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
 import { messageOf } from '../lib/notice';
 
+// ---------------------------------------------------------------------------
+// 设计令牌
+//
+// 一律用这几档语义类名，组件里别再散写 bg-zinc-900 / border-zinc-800：
+//   Level 0 画布   bg-[#0D1117]
+//   Level 1 侧栏/抽屉 bg-[#11161F]  border-white/[0.07]
+//   Level 2 卡片   bg-[#161C28]/90 border-white/[0.07] hover:border-white/[0.14]
+//   Level 3 内嵌块  bg-[#1C2333]    border-white/[0.08]
+//   Level 4 悬浮态  bg-white/[0.04] hover:bg-white/[0.07]
+// ---------------------------------------------------------------------------
+
+/** 表面色，供需要手写容器的地方引用 */
+export const surface = {
+  card: 'rounded-xl bg-[#161C28]/90 border border-white/[0.07] hover:border-white/[0.14] shadow-sm',
+  inset: 'rounded-xl bg-[#1C2333] border border-white/[0.08]',
+  panel: 'bg-[#11161F] border border-white/[0.07]',
+} as const;
+
+/** 输入类控件。**宽度保持中性**（不要内置 w-full），调用方照旧按需拼宽度 */
 export const inputCls =
-  'rounded border border-zinc-700 bg-zinc-900 px-2 py-1 text-zinc-100 outline-none focus:border-zinc-500';
+  'rounded-lg border border-white/[0.10] bg-[#0D1117]/90 px-2.5 py-1.5 text-slate-100 placeholder:text-slate-600 outline-none transition-colors focus:border-indigo-400 focus:ring-2 focus:ring-indigo-500/20';
 
 export const btnGhost =
-  'rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500 hover:text-zinc-100';
+  'rounded-lg border border-white/[0.08] px-2.5 py-1 text-xs text-slate-300 transition-colors hover:border-white/[0.16] hover:bg-white/[0.06] hover:text-slate-100 disabled:opacity-40';
 
 export const btnPrimary =
-  'rounded bg-emerald-600 px-3 py-1 text-sm text-white hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600';
+  'rounded-lg bg-indigo-500 px-3 py-1 text-sm font-medium text-white shadow-sm transition-colors hover:bg-indigo-400 disabled:opacity-40 disabled:hover:bg-indigo-500';
 
 export const btnDanger =
-  'rounded border border-rose-800 px-2 py-1 text-xs text-rose-300 hover:border-rose-600 hover:text-rose-200';
+  'rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs text-rose-300 transition-colors hover:bg-rose-500/20 hover:text-rose-200 disabled:opacity-40';
+
+/** 等宽编号/日期/路径的统一写法 */
+export const mono = 'font-mono text-xs text-indigo-400';
+
+// ---------------------------------------------------------------------------
+// 原子组件
+// ---------------------------------------------------------------------------
+
+export function Button({
+  variant = 'secondary',
+  size = 'md',
+  className = '',
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: 'sm' | 'md';
+}) {
+  const variants = {
+    primary: 'bg-indigo-500 hover:bg-indigo-400 text-white border border-indigo-400/20',
+    secondary: 'bg-[#1C2333] hover:bg-white/[0.08] text-slate-200 border border-white/[0.08]',
+    ghost: 'bg-transparent hover:bg-white/[0.05] text-slate-300 border border-transparent',
+    danger: 'bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30',
+  };
+  const sizes = {
+    sm: 'px-2.5 py-1 text-xs rounded-lg',
+    md: 'px-3.5 py-1.5 text-xs rounded-lg',
+  };
+  return (
+    <button
+      className={`inline-flex cursor-pointer items-center justify-center gap-1.5 font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${variants[variant]} ${sizes[size]} ${className}`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={`${inputCls} w-full ${className}`} {...props} />;
+}
+
+export function Select({ className = '', children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return (
+    <select className={`${inputCls} ${className}`} {...props}>
+      {children}
+    </select>
+  );
+}
+
+/**
+ * Level 2 卡片。标题栏可选，用来替代原来那种「实线框 + 灰头」的后台风。
+ *
+ * `highlight` 是给拖放高亮这类「整块卡片要变色」的场景准备的：边框和底色**在这里一处决定**，
+ * 调用方不用靠 `!important` 去压 `surface.card` 里的同名类 —— 那样能 work，
+ * 但下次谁改了 SurfaceCard 的底色，就会莫名把高亮弄坏。
+ */
+export function SurfaceCard({
+  title,
+  extra,
+  highlight = false,
+  className = '',
+  children,
+  ...props
+}: Omit<React.HTMLAttributes<HTMLDivElement>, 'title'> & {
+  title?: ReactNode;
+  extra?: ReactNode;
+  highlight?: boolean;
+}) {
+  return (
+    <div
+      className={`rounded-xl border shadow-sm transition-colors ${
+        highlight
+          ? 'border-indigo-400/60 bg-indigo-500/5'
+          : 'border-white/[0.07] bg-[#161C28]/90 hover:border-white/[0.14]'
+      } ${className}`}
+      {...props}
+    >
+      {(title || extra) && (
+        <header className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-2.5">
+          {title && <h3 className="text-xs font-semibold tracking-tight text-slate-200">{title}</h3>}
+          {extra && <div className="ml-auto flex items-center gap-2">{extra}</div>}
+        </header>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 右滑抽屉（Level 1 表面）。
+ *
+ * 点遮罩或 ✕ 关闭，Esc 也关。**它只负责壳** —— 里面放什么由调用方决定，
+ * 这样同一个壳既能放只读预览，也能放可编辑面板。
+ */
+export function SlideOverDrawer({
+  open,
+  onClose,
+  title,
+  badge,
+  width = 'max-w-xl',
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode;
+  badge?: ReactNode;
+  width?: string;
+  children: ReactNode;
+}) {
+  if (!open) return null;
+  return (
+    <div
+      onClick={onClose}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose();
+      }}
+      className="animate-overlay-in fixed inset-0 z-40 flex justify-end bg-black/55 backdrop-blur-xs"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`animate-drawer-in flex h-full w-full ${width} flex-col overflow-hidden border-l border-white/[0.08] bg-[#11161F] shadow-2xl`}
+      >
+        <div className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.07] px-5">
+          <div className="flex min-w-0 items-center gap-2">
+            {badge && (
+              <span className="rounded bg-indigo-500/15 px-2 py-0.5 font-mono text-xs font-semibold text-indigo-400">
+                {badge}
+              </span>
+            )}
+            {title && <span className="truncate text-xs text-slate-400">{title}</span>}
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-white/10 hover:text-slate-100"
+            title="关闭（Esc）"
+          >
+            ✕
+          </button>
+        </div>
+        <div className="flex-1 space-y-5 overflow-y-auto p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// 表单与容器
+// ---------------------------------------------------------------------------
 
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-zinc-500">{label}</span>
+      <span className="text-xs text-slate-500">{label}</span>
       {children}
     </label>
   );
@@ -24,21 +192,26 @@ export function Field({ label, children }: { label: string; children: ReactNode 
 
 export function Hint({ children, tone }: { children: ReactNode; tone?: 'error' }) {
   return (
-    <div className={`py-6 text-sm ${tone === 'error' ? 'text-amber-300' : 'text-zinc-500'}`}>
+    <div className={`py-6 text-sm ${tone === 'error' ? 'text-rose-300' : 'text-slate-500'}`}>
       {children}
     </div>
   );
 }
 
-export function Panel({ title, extra, children }: { title: string; extra?: ReactNode; children: ReactNode }) {
+/** 带标题的分段容器。等价于无 extra 的 SurfaceCard，保留旧名字供现有页面使用 */
+export function Panel({
+  title,
+  extra,
+  children,
+}: {
+  title: string;
+  extra?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <section className="rounded border border-zinc-800">
-      <header className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2">
-        <h3 className="text-xs font-medium text-zinc-300">{title}</h3>
-        <div className="ml-auto flex items-center gap-2">{extra}</div>
-      </header>
-      <div className="p-3">{children}</div>
-    </section>
+    <SurfaceCard title={title} extra={extra}>
+      <div className="p-4">{children}</div>
+    </SurfaceCard>
   );
 }
 
@@ -122,8 +295,8 @@ export function InlineCode({
         }
         className={
           code
-            ? 'font-mono text-sm text-zinc-500 hover:text-zinc-300'
-            : 'rounded border border-dashed border-zinc-700 px-1.5 text-[11px] text-zinc-600 hover:border-zinc-500 hover:text-zinc-400'
+            ? `${mono} text-sm hover:text-indigo-300`
+            : 'rounded-md border border-dashed border-white/[0.14] px-1.5 text-[11px] text-slate-600 hover:border-white/[0.24] hover:text-slate-400'
         }
       >
         {code ?? '＋ 编号'}
@@ -172,14 +345,14 @@ export function InlineCode({
         type="button"
         disabled={busy}
         onClick={() => void commit()}
-        className="text-xs text-sky-400 hover:text-sky-300 disabled:opacity-40"
+        className="text-xs text-indigo-400 transition-colors hover:text-indigo-300 disabled:opacity-40"
       >
         {busy ? '…' : '改'}
       </button>
       <button
         type="button"
         onClick={() => setEditing(false)}
-        className="text-xs text-zinc-500 hover:text-zinc-300"
+        className="text-xs text-slate-500 transition-colors hover:text-slate-300"
       >
         取消
       </button>

@@ -1,23 +1,118 @@
 @import 'tailwindcss';
 
-:root {
-  color-scheme: dark;
+/*
+ * 「微光深蓝 (Linear Slate)」设计令牌
+ *
+ * 原版是纯黑灰阶（zinc-950 + zinc-800 实线边框），长时间盯屏像看一个黑匣子；
+ * 而且 7 种高饱和状态色同屏竞争焦点，满屏报警反而找不到重点。
+ *
+ * 新版把「层级」交给**四档带冷蓝微光的表面色**，把「状态」交给低饱和胶囊 + 圆点。
+ * 组件里请用这些语义类名，不要再散写 bg-zinc-900 / bg-black。
+ */
+@layer base {
+  :root {
+    color-scheme: dark;
+
+    /* 四档表面：越靠上层越亮，靠亮度差而不是靠边框制造纵深 */
+    --bg-canvas: #0d1117;
+    --bg-sidebar: #11161f;
+    --bg-card: #161c28;
+    --bg-elevated: #1c2333;
+
+    /* 语义色 */
+    --primary: #6366f1; /* indigo-500 */
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background-color: var(--bg-canvas);
+    color: #f1f5f9; /* slate-100 */
+    font-family:
+      'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC',
+      sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* 低存在感暗色滚动条：列表页长时间滚动时不抢注意力 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.24);
+  }
 }
 
-html,
-body,
-#root {
-  height: 100%;
+/*
+ * 顶部环境微光：一层几乎看不见的靛蓝渐变，把「纯黑」变成「有光的方向」。
+ * opacity 只有 5%，够暖但不会干扰阅读 —— 不要把值调大，那会变成装饰噪音。
+ */
+.ambient-top-glow {
+  pointer-events: none;
+  position: fixed;
+  inset: 0 0 auto 0;
+  height: 12rem;
+  background: linear-gradient(
+    180deg,
+    rgba(99, 102, 241, 0.055) 0%,
+    rgba(16, 185, 129, 0.018) 55%,
+    transparent 100%
+  );
+  z-index: 0;
 }
 
-body {
-  margin: 0;
-  font-family:
-    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  font-size: 14px;
+/*
+ * 抽屉入场。自己写这两个 keyframes 而不是引 tailwindcss-animate：
+ * 那个插件只为两行动画不值得多一个依赖，而且未知类名会静默失效 —— 更难发现。
+ */
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(1.5rem);
+    opacity: 0.5;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.animate-overlay-in {
+  animation: overlay-in 150ms ease-out;
+}
+.animate-drawer-in {
+  animation: drawer-in 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* 滚动条细一点，长时间盯着列表舒服些 */
-* {
-  scrollbar-width: thin;
+@media (prefers-reduced-motion: reduce) {
+  .animate-overlay-in,
+  .animate-drawer-in {
+    animation: none;
+  }
 }
