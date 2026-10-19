@@ -90,6 +90,16 @@
 
 ## 前端有个 tsc 查不出的坑
 
+**别用原生 `<select>`，用 `ui.tsx` 的 `Select`。**
+
+原生 select 的**弹层是浏览器/系统画的，不是 DOM**：深色界面里它照样是一片白底 + 浅蓝高亮。
+`color-scheme: dark` 管不住它，`option { background }` 在各家实现里也不一致 ——
+所以看起来就像「下拉栏没做」。这一条 tsc 完全查不出来：类型都对，只是视觉上破了个大洞。
+
+`Select` 自己画弹层（`#1C2333` 面板 + indigo 高亮 + 选中打勾 + 键盘 ↑↓/Enter/Esc/点外面关闭），
+但**调用方式刻意和原生一致**（`<option value>label</option>` 子元素 + `onChange` 拿 `e.target.value`），
+所以迁移旧控件只需把标签名从 `<select>` 改成 `<Select>` 并补 import。
+
 **不要把 hook 放在 `if (...) return` 后面。**
 
 组件里常见「加载中 → 提前 return，加载完 → 往下走」的写法。如果 hook 写在那句 return 之后，
