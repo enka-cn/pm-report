@@ -7,7 +7,7 @@ import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { beginDeliverableDrag, deliverableIdOf, isDeliverableDrag } from '../lib/drop';
 import { fmtTime } from '../lib/format';
-import { Button, SurfaceCard, inputCls } from './ui';
+import { Button, Select, SurfaceCard, inputCls } from './ui';
 
 type Act = <T>(fn: () => Promise<T>, success?: (r: T) => string) => Promise<void>;
 
@@ -418,7 +418,7 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
         <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.07] bg-indigo-500/5 px-4 py-2 text-xs">
           <span className="text-indigo-300">已选 {selected.size} 个</span>
 
-          <select
+          <Select
             value=""
             onChange={(e) => {
               const value = e.target.value;
@@ -439,7 +439,7 @@ export function ItemFileTree({ detail, act }: { detail: ItemData; act: Act }) {
                 {o.label}
               </option>
             ))}
-          </select>
+          </Select>
 
           {confirmingBatch ? (
             <form

@@ -7,7 +7,7 @@ import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { fmtTime } from '../lib/format';
 import { ProjectKindBadge } from './Badges';
-import { Button, Field, Hint, inputCls, mono, surface } from './ui';
+import { Button, Field, Hint, Select, inputCls, mono, surface } from './ui';
 
 export function Projects() {
   const [kind, setKind] = useState<ProjectKind | ''>('');
@@ -25,7 +25,7 @@ export function Projects() {
     // 页面标题与四周留白都由壳层的吸顶 header / <main> 提供，这里只负责居中和纵向间距
     <div className="mx-auto max-w-5xl space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={kind}
           onChange={(e) => setKind(e.target.value as ProjectKind | '')}
           className={`${inputCls} text-sm`}
@@ -33,7 +33,7 @@ export function Projects() {
           <option value="">全部类型</option>
           <option value="delivery">交付型</option>
           <option value="caretaking">看护型</option>
-        </select>
+        </Select>
 
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-300">
           <input
@@ -183,7 +183,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
         </Field>
 
         <Field label="类型">
-          <select
+          <Select
             value={kind}
             onChange={(e) => setKind(e.target.value as ProjectKind)}
             className={`${inputCls} text-sm`}
@@ -193,7 +193,7 @@ function NewProjectForm({ onDone }: { onDone: () => void }) {
                 {v}
               </option>
             ))}
-          </select>
+          </Select>
         </Field>
 
         {kind === 'delivery' ? (

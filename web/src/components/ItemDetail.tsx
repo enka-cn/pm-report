@@ -22,6 +22,7 @@ import {
   Hint,
   InlineCode,
   PromptRow,
+  Select,
   SurfaceCard,
   inputCls,
   mono,
@@ -756,7 +757,7 @@ function DeliverableList({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-[13px] text-slate-300">{d.name}</span>
                 {/* 拖进来时按扩展名猜的类别，猜错了在这儿改回来 */}
-                <select
+                <Select
                   value={d.category}
                   title="类别（拖进来的文件按扩展名自动归类）"
                   onChange={(e) =>
@@ -778,7 +779,7 @@ function DeliverableList({
                       {v}
                     </option>
                   ))}
-                </select>
+                </Select>
                 {d.required === 1 && (
                   <span className={missing ? 'text-[11px] text-amber-300' : 'text-[11px] text-slate-500'}>
                     必交{missing ? '（未上传）' : ''}
@@ -812,7 +813,7 @@ function DeliverableList({
       >
         <div className="flex flex-wrap items-end gap-2">
           <Field label="目标">
-            <select
+            <Select
               value={target}
               onChange={(e) => setTarget(e.target.value)}
               className={`${inputCls} text-xs`}
@@ -823,7 +824,7 @@ function DeliverableList({
                   给「{d.name}」加版本
                 </option>
               ))}
-            </select>
+            </Select>
           </Field>
 
           {target === 'new' && (
@@ -838,7 +839,7 @@ function DeliverableList({
               </Field>
 
               <Field label="分类">
-                <select
+                <Select
                   value={category}
                   onChange={(e) => setCategory(e.target.value as DeliverableCategory)}
                   className={`${inputCls} text-xs`}
@@ -848,7 +849,7 @@ function DeliverableList({
                       {v}
                     </option>
                   ))}
-                </select>
+                </Select>
               </Field>
 
               <label className="flex items-center gap-1.5 pb-1.5 text-[11px] text-slate-300">
@@ -1122,7 +1123,7 @@ function NewBlockerForm({
         );
       }}
     >
-      <select
+      <Select
         value={direction}
         onChange={(e) => setDirection(e.target.value as typeof direction)}
         className={`${inputCls} w-full text-xs`}
@@ -1132,7 +1133,7 @@ function NewBlockerForm({
             {v}
           </option>
         ))}
-      </select>
+      </Select>
 
       <input
         required
@@ -1150,7 +1151,7 @@ function NewBlockerForm({
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <select
+        <Select
           value={severity}
           onChange={(e) => setSeverity(e.target.value as typeof severity)}
           className={`${inputCls} text-xs`}
@@ -1160,7 +1161,7 @@ function NewBlockerForm({
               {v}
             </option>
           ))}
-        </select>
+        </Select>
         <input
           type="date"
           value={promisedAt}

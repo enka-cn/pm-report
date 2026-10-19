@@ -1,4 +1,14 @@
-import { useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react';
+import {
+  Children,
+  isValidElement,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type ReactNode,
+} from 'react';
 import { messageOf } from '../lib/notice';
 
 // ---------------------------------------------------------------------------
@@ -73,11 +83,163 @@ export function Input({ className = '', ...props }: InputHTMLAttributes<HTMLInpu
   return <input className={`${inputCls} w-full ${className}`} {...props} />;
 }
 
-export function Select({ className = '', children, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+/**
+ * 下拉选择。
+ *
+ * **不是原生 `<select>`。** 原生 select 的弹层是浏览器/系统画的：在深色界面里它照样
+ * 是一片白底 + 浅蓝高亮，`color-scheme: dark` 管不住它，`option {}` 的样式各家实现也不一致。
+ * 一个白弹层足以把整套暗色视觉破掉，所以这里自己画。
+ *
+ * 调用方式**刻意和原生保持一致**（`<option value>label</option>` 子元素 + `onChange`
+ * 拿 `e.target.value`），这样已有的十几处调用点只要把标签名从 `<select>` 换成 `<Select>`
+ * 就行，不用重写。
+ */
+export function Select({
+  value,
+  onChange,
+  children,
+  className = '',
+  disabled = false,
+  title,
+}: {
+  value: string | number;
+  onChange?: (e: { target: { value: string } }) => void;
+  children?: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  /** 键盘高亮的那一项（不是已选中项） */
+  const [active, setActive] = useState(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // 从 <option> 子元素里读出选项。支持 children 是 .map 出来的数组。
+  const options = useMemo(() => {
+    const out: { value: string; label: ReactNode; disabled: boolean }[] = [];
+    Children.forEach(children, (child) => {
+      if (!isValidElement(child) || child.type !== 'option') return;
+      const p = child.props as { value?: string | number; children?: ReactNode; disabled?: boolean };
+      out.push({
+        value: String(p.value ?? ''),
+        label: p.children,
+        disabled: p.disabled === true,
+      });
+    });
+    return out;
+  }, [children]);
+
+  const selectedIndex = options.findIndex((o) => o.value === String(value));
+  const current = selectedIndex >= 0 ? options[selectedIndex] : undefined;
+
+  function openMenu(): void {
+    if (disabled) return;
+    setActive(selectedIndex >= 0 ? selectedIndex : 0);
+    setOpen(true);
+  }
+
+  function choose(index: number): void {
+    const opt = options[index];
+    if (!opt || opt.disabled) return;
+    setOpen(false);
+    if (opt.value !== String(value)) onChange?.({ target: { value: opt.value } });
+  }
+
+  // 点外面关掉
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  function onKeyDown(e: React.KeyboardEvent): void {
+    if (disabled) return;
+    if (!open) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openMenu();
+      }
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setActive((i) => Math.min(options.length - 1, i + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setActive((i) => Math.max(0, i - 1));
+    } else if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      choose(active);
+    } else if (e.key === 'Tab') {
+      setOpen(false);
+    }
+  }
+
   return (
-    <select className={`${inputCls} ${className}`} {...props}>
-      {children}
-    </select>
+    <div ref={rootRef} className="relative" title={title}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => (open ? setOpen(false) : openMenu())}
+        onKeyDown={onKeyDown}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`${inputCls} flex w-full items-center gap-2 text-left disabled:opacity-50 ${className}`}
+      >
+        <span className="min-w-0 flex-1 truncate">
+          {current?.label ?? <span className="text-slate-600">请选择</span>}
+        </span>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          className={`h-3 w-3 shrink-0 text-slate-500 transition-transform ${open ? 'rotate-180' : ''}`}
+          aria-hidden
+        >
+          <path d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className="absolute left-0 top-[calc(100%+4px)] z-50 max-h-64 min-w-full overflow-y-auto rounded-lg border border-white/[0.12] bg-[#1C2333] p-1 shadow-2xl"
+        >
+          {options.length === 0 && (
+            <div className="px-2.5 py-1.5 text-xs text-slate-500">没有可选项</div>
+          )}
+          {options.map((opt, i) => {
+            const isSelected = opt.value === String(value);
+            const isActive = i === active;
+            return (
+              <button
+                key={`${opt.value}-${i}`}
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                disabled={opt.disabled}
+                onMouseEnter={() => setActive(i)}
+                onClick={() => choose(i)}
+                className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                  isActive ? 'bg-indigo-500/15 text-indigo-200' : 'text-slate-300'
+                } ${opt.disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+              >
+                <span className="min-w-0 flex-1 truncate">{opt.label}</span>
+                {isSelected && <span className="shrink-0 text-indigo-400">✓</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

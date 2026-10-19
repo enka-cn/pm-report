@@ -6,7 +6,7 @@ import { useMeta } from '../lib/meta';
 import { messageOf, useNotice } from '../lib/notice';
 import { navigate } from '../lib/router';
 import { ConditionBadge, RoleBadge } from './Badges';
-import { Button, Field, Hint, inputCls, mono, surface } from './ui';
+import { Button, Field, Hint, Select, inputCls, mono, surface } from './ui';
 
 export function ItemList() {
   const [q, setQ] = useState('');
@@ -34,7 +34,7 @@ export function ItemList() {
           className={`${inputCls} w-56 text-sm`}
         />
 
-        <select
+        <Select
           value={role}
           onChange={(e) => setRole(e.target.value as Role | '')}
           className={`${inputCls} text-sm`}
@@ -45,9 +45,9 @@ export function ItemList() {
               {v}
             </option>
           ))}
-        </select>
+        </Select>
 
-        <select
+        <Select
           value={condition}
           onChange={(e) => setCondition(e.target.value)}
           className={`${inputCls} text-sm`}
@@ -58,7 +58,7 @@ export function ItemList() {
               {v}
             </option>
           ))}
-        </select>
+        </Select>
 
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-slate-400 transition-colors hover:text-slate-300">
           <input
@@ -203,7 +203,7 @@ export function NewItemForm({
       </Field>
 
       <Field label="流水线">
-        <select
+        <Select
           value={chosen?.key ?? ''}
           onChange={(e) => setPipelineKey(e.target.value)}
           disabled={pipelines.length === 0}
@@ -214,7 +214,7 @@ export function NewItemForm({
               {p.name}（{meta.data?.roles[p.role] ?? p.role}）
             </option>
           ))}
-        </select>
+        </Select>
       </Field>
 
       <Field label="整体 DDL">

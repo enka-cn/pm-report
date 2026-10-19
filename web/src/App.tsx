@@ -12,7 +12,7 @@ import { Pipelines } from './components/Pipelines';
 import { NoticeProvider, messageOf, useNotice } from './lib/notice';
 import { api } from './api';
 import { navigate, useRoute } from './lib/router';
-import { inputCls } from './components/ui';
+import { Select, inputCls } from './components/ui';
 
 export default function App() {
   return (
@@ -365,7 +365,7 @@ function QuickCapture() {
         className="flex items-center gap-2 rounded-xl border border-white/[0.07] bg-[#161C28]/70 px-3 py-1.5"
       >
         <Icon name="note" className="text-slate-600" />
-        <select
+        <Select
           value={effectiveId ?? ''}
           onChange={(e) => setItemId(Number(e.target.value))}
           className={`${inputCls} max-w-[16rem] shrink-0 border-transparent bg-transparent py-0.5 text-xs`}
@@ -376,7 +376,7 @@ function QuickCapture() {
               {i.ref}
             </option>
           ))}
-        </select>
+        </Select>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
